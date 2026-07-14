@@ -8,91 +8,84 @@ function ParticleBackground({ darkMode }) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     let animationId;
-    let particles = [];
+    let time = 0;
+    let lastFrame = 0;
+    const FPS_CAP = 30;
+    const FRAME_INTERVAL = 1000 / FPS_CAP;
 
     const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      ctx.scale(dpr, dpr);
     };
     resize();
     window.addEventListener('resize', resize);
 
     const isDark = darkMode;
-    const colors = isDark
-      ? ['rgba(59, 130, 246, 0.5)', 'rgba(56, 189, 248, 0.4)', 'rgba(96, 165, 250, 0.3)', 'rgba(37, 99, 235, 0.4)']
-      : ['rgba(59, 130, 246, 0.35)', 'rgba(56, 189, 248, 0.25)', 'rgba(96, 165, 250, 0.2)', 'rgba(37, 99, 235, 0.3)'];
 
-    const particleCount = Math.min(Math.floor(window.innerWidth / 18), 65);
-    for (let i = 0; i < particleCount; i++) {
-      particles.push({
-        x: Math.random() * canvas.width,
-        y: Math.random() * canvas.height,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4,
-        size: Math.random() * 2.5 + 0.5,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        pulse: Math.random() * Math.PI * 2,
-        pulseSpeed: 0.01 + Math.random() * 0.02,
-      });
-    }
+    const waveLayers = isDark
+      ? [
+          { amp: 80, freq: 0.004, speed: 0.015, yOffset: 0.55, color: 'rgba(37, 99, 235, 0.08)', lineColor: 'rgba(59, 130, 246, 0.15)', lineWidth: 1.5 },
+          { amp: 60, freq: 0.006, speed: 0.02, yOffset: 0.62, color: 'rgba(56, 189, 248, 0.06)', lineColor: 'rgba(56, 189, 248, 0.12)', lineWidth: 1.2 },
+          { amp: 100, freq: 0.003, speed: 0.012, yOffset: 0.7, color: 'rgba(96, 165, 250, 0.05)', lineColor: 'rgba(96, 165, 250, 0.1)', lineWidth: 1 },
+          { amp: 50, freq: 0.008, speed: 0.025, yOffset: 0.78, color: 'rgba(37, 99, 235, 0.04)', lineColor: 'rgba(147, 197, 253, 0.08)', lineWidth: 0.8 },
+        ]
+      : [
+          { amp: 80, freq: 0.004, speed: 0.015, yOffset: 0.55, color: 'rgba(59, 130, 246, 0.06)', lineColor: 'rgba(59, 130, 246, 0.12)', lineWidth: 1.5 },
+          { amp: 60, freq: 0.006, speed: 0.02, yOffset: 0.62, color: 'rgba(56, 189, 248, 0.05)', lineColor: 'rgba(56, 189, 248, 0.1)', lineWidth: 1.2 },
+          { amp: 100, freq: 0.003, speed: 0.012, yOffset: 0.7, color: 'rgba(96, 165, 250, 0.04)', lineColor: 'rgba(96, 165, 250, 0.08)', lineWidth: 1 },
+          { amp: 50, freq: 0.008, speed: 0.025, yOffset: 0.78, color: 'rgba(37, 99, 235, 0.03)', lineColor: 'rgba(147, 197, 253, 0.06)', lineWidth: 0.8 },
+        ];
 
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const w = () => window.innerWidth;
+    const h = () => window.innerHeight;
 
-      // Draw connections
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 120) {
-            const opacity = (1 - dist / 120) * 0.15;
-            ctx.strokeStyle = isDark
-              ? `rgba(59, 130, 246, ${opacity})`
-              : `rgba(59, 130, 246, ${opacity * 0.8})`;
-            ctx.lineWidth = 0.5;
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.stroke();
-          }
-        }
-      }
-
-      // Draw particles
-      particles.forEach(p => {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.pulse += p.pulseSpeed;
-
-        // Wrap around edges
-        if (p.x < 0) p.x = canvas.width;
-        if (p.x > canvas.width) p.x = 0;
-        if (p.y < 0) p.y = canvas.height;
-        if (p.y > canvas.height) p.y = 0;
-
-        const pulseSize = p.size + Math.sin(p.pulse) * 0.5;
-        const glowSize = pulseSize * 3;
-
-        // Glow
-        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowSize);
-        gradient.addColorStop(0, p.color);
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, glowSize, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Core
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, pulseSize, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
+    const animate = (timestamp) => {
       animationId = requestAnimationFrame(animate);
+      // FPS cap
+      if (timestamp - lastFrame < FRAME_INTERVAL) return;
+      lastFrame = timestamp;
+
+      ctx.clearRect(0, 0, w(), h());
+
+      // Adaptive step: fewer points on large screens
+      const step = w() > 1920 ? 4 : 2;
+
+      waveLayers.forEach((wave) => {
+        const baseY = h() * wave.yOffset;
+
+        ctx.beginPath();
+        ctx.moveTo(0, h());
+        for (let x = 0; x <= w(); x += step) {
+          const y = baseY
+            + Math.sin(x * wave.freq + time * wave.speed) * wave.amp
+            + Math.sin(x * wave.freq * 2.3 + time * wave.speed * 1.5) * wave.amp * 0.3;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(w(), h());
+        ctx.closePath();
+        ctx.fillStyle = wave.color;
+        ctx.fill();
+
+        ctx.beginPath();
+        for (let x = 0; x <= w(); x += step) {
+          const y = baseY
+            + Math.sin(x * wave.freq + time * wave.speed) * wave.amp
+            + Math.sin(x * wave.freq * 2.3 + time * wave.speed * 1.5) * wave.amp * 0.3;
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = wave.lineColor;
+        ctx.lineWidth = wave.lineWidth;
+        ctx.stroke();
+      });
+
+      time += 1;
     };
-    animate();
+    animationId = requestAnimationFrame(animate);
 
     return () => {
       cancelAnimationFrame(animationId);

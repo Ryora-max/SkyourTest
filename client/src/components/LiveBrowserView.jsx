@@ -2,12 +2,15 @@ import { useState, useEffect, useRef } from 'react';
 import { Radio, Loader2, Eye, Monitor } from 'lucide-react';
 
 export default function LiveBrowserView({ runId, fullscreen = false, runStatus, darkMode = false }) {
-  const [frame, setFrame] = useState(null);
+  const [hasFrame, setHasFrame] = useState(false);
   const [stepInfo, setStepInfo] = useState(null);
   const [connected, setConnected] = useState(false);
   const [done, setDone] = useState(false);
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
+  const canvasRef = useRef(null);
+  const latestFrameRef = useRef(null);
+  const rafRef = useRef(null);
 
   // Fallback: if runStatus prop is completed/error, set done
   useEffect(() => {
@@ -26,6 +29,7 @@ export default function LiveBrowserView({ runId, fullscreen = false, runStatus, 
 
       try {
         const ws = new WebSocket(wsUrl);
+        ws.binaryType = 'arraybuffer';
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -38,12 +42,42 @@ export default function LiveBrowserView({ runId, fullscreen = false, runStatus, 
 
         ws.onmessage = (event) => {
           if (!mounted) return;
+          if (event.data instanceof ArrayBuffer) {
+            const buf = new Uint8Array(event.data);
+            if (buf[0] === 0x01) {
+              const runIdLen = buf[1];
+              const frameRunId = new TextDecoder().decode(buf.slice(2, 2 + runIdLen));
+              if (runIdLen > 0 && frameRunId !== runId) return;
+              const jpegData = buf.slice(2 + runIdLen);
+              const blob = new Blob([jpegData], { type: 'image/jpeg' });
+              if (latestFrameRef.current) URL.revokeObjectURL(latestFrameRef.current.url);
+              const frameUrl = URL.createObjectURL(blob);
+              latestFrameRef.current = { url: frameUrl };
+              if (!rafRef.current) {
+                rafRef.current = requestAnimationFrame(() => {
+                  rafRef.current = null;
+                  const frame = latestFrameRef.current;
+                  if (!frame) return;
+                  createImageBitmap(new Blob([jpegData], { type: 'image/jpeg' })).then(bmp => {
+                    const canvas = canvasRef.current;
+                    if (canvas) {
+                      const ctx = canvas.getContext('2d');
+                      ctx.imageSmoothingEnabled = true;
+                      ctx.imageSmoothingQuality = 'high';
+                      ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+                      bmp.close();
+                    }
+                    setHasFrame(true);
+                  }).catch(() => {});
+                });
+              }
+            }
+            return;
+          }
           try {
             const msg = JSON.parse(event.data);
             if (msg.runId && msg.runId !== runId) return;
-            if (msg.type === 'frame') {
-              setFrame(msg.data);
-            } else if (msg.type === 'test_step') {
+            if (msg.type === 'test_step') {
               setStepInfo(msg.data);
             } else if (msg.type === 'test_done') {
               setDone(true);
@@ -117,14 +151,24 @@ export default function LiveBrowserView({ runId, fullscreen = false, runStatus, 
       </div>
 
       {/* Browser Frame */}
-      <div className={`relative bg-black ${fullscreen ? 'flex-1 min-h-0' : ''}`} style={fullscreen ? {} : { minHeight: '300px' }}>
-        {frame ? (
-          <img
-            src={`data:image/jpeg;base64,${frame}`}
-            alt="Live browser"
-            className={`w-full h-auto block ${fullscreen ? 'max-h-full' : ''}`}
-            style={fullscreen ? { height: '100%', objectFit: 'contain' } : { maxHeight: '500px', objectFit: 'contain' }}
-          />
+      <div className={`relative bg-black overflow-hidden ${fullscreen ? 'flex-1 min-h-0' : ''}`} style={fullscreen ? {} : { minHeight: '300px' }}>
+        {hasFrame ? (
+          <div className={`flex items-center justify-center w-full h-full ${fullscreen ? 'min-h-0' : ''}`} style={fullscreen ? {} : { minHeight: '300px' }}>
+            <canvas
+              ref={canvasRef}
+              width={1920}
+              height={1080}
+              className="block"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                width: 'auto',
+                height: 'auto',
+                aspectRatio: '16 / 9',
+                objectFit: 'contain',
+              }}
+            />
+          </div>
         ) : (
           <div className={`flex flex-col items-center justify-center ${darkMode ? 'text-slate-500' : 'text-slate-400'} ${fullscreen ? 'h-full' : 'h-[300px]'}`}>
             <Loader2 size={32} className="animate-spin mb-2" />

@@ -11,9 +11,6 @@ import LandingPage from './components/LandingPage';
 import LoadingScreen from './components/LoadingScreen';
 import LearnLogin from './components/LearnLogin';
 import LearnPage from './components/LearnPage';
-import Logo from './components/Logo';
-import { I18nProvider, useI18n } from './i18n';
-import { Globe } from 'lucide-react';
 
 const API_BASE = '';
 
@@ -196,6 +193,25 @@ function App() {
             setActiveRunExists(false);
             localStorage.removeItem(RUN_CACHE_KEY);
             fetchRuns();
+
+            if (status.status === 'completed') {
+              try {
+                const pdfRes = await fetch(`${API_BASE}/api/runs/${run.id}/report/pdf`);
+                if (pdfRes.ok) {
+                  const blob = await pdfRes.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `SkyourTest-${run.id}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  window.URL.revokeObjectURL(url);
+                }
+              } catch (e) {
+                console.error('Auto-download PDF failed:', e);
+              }
+            }
           }
         } catch (err) {
           pollErrors++;
@@ -244,8 +260,23 @@ function App() {
     window.open(`${API_BASE}/api/runs/${runId}/report`, '_blank');
   };
 
-  const downloadPdfReport = (runId) => {
-    window.open(`${API_BASE}/api/runs/${runId}/report/pdf`, '_blank');
+  const downloadPdfReport = async (runId) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/runs/${runId}/report/pdf`);
+      if (!res.ok) throw new Error('Failed to download PDF');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `SkyourTest-${runId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('PDF download failed:', e);
+      window.open(`${API_BASE}/api/runs/${runId}/report/pdf`, '_blank');
+    }
   };
 
   const viewRun = (run) => {
@@ -274,12 +305,17 @@ function App() {
     }
   };
 
+  const handleSetView = (newView) => {
+    if (newView === view) return;
+    setView(newView);
+  };
+
   if (appLoading) return <LoadingScreen />;
 
   if (view === 'landing') {
     return (
       <>
-        <LandingPage onEnterApp={() => setView('new')} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
+        <LandingPage onEnterApp={() => handleSetView('new')} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
         {showLearnLogin && <LearnLogin onAuth={handleLearnAuth} onClose={() => setShowLearnLogin(false)} />}
       </>
     );
@@ -288,7 +324,7 @@ function App() {
   if (view === 'learn' && learnAuthed) {
     return (
       <>
-        <LearnPage onExit={() => setView('landing')} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
+        <LearnPage onExit={() => handleSetView('landing')} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
         {showLearnLogin && <LearnLogin onAuth={handleLearnAuth} onClose={() => setShowLearnLogin(false)} />}
       </>
     );
@@ -296,14 +332,14 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row relative">
-      <ParticleBackground darkMode={darkMode} />
-      <div className="deco-orb deco-orb-1" />
-      <div className="deco-orb deco-orb-2" />
-      <div className="deco-orb deco-orb-3" />
-      <Header view={view} setView={setView} darkMode={darkMode} toggleDarkMode={toggleDarkMode} hasActiveRun={!!currentRun} onLogoSecretClick={() => { if (learnAuthed) setView('learn'); else setShowLearnLogin(true); }} onGoHome={() => setView('landing')} />
+      {view !== 'live' && <ParticleBackground darkMode={darkMode} />}
+      {view !== 'live' && <div className="deco-orb deco-orb-1" />}
+      {view !== 'live' && <div className="deco-orb deco-orb-2" />}
+      {view !== 'live' && <div className="deco-orb deco-orb-3" />}
+      <Header view={view} setView={handleSetView} darkMode={darkMode} toggleDarkMode={toggleDarkMode} hasActiveRun={!!currentRun} onLogoSecretClick={() => { if (learnAuthed) handleSetView('learn'); else setShowLearnLogin(true); }} onGoHome={() => handleSetView('landing')} />
 
       <main className="flex-1 px-4 sm:px-6 lg:px-8 pt-4 lg:pt-8 pb-8 min-w-0 relative" style={{ zIndex: 1 }}>
-        <div key={view} className="animate-view-enter">
+        <div key={view} className="animate-fade-in">
           {view === 'new' && (
             <TestConfigForm onStart={startTest} disabled={activeRunExists} />
           )}
@@ -312,18 +348,18 @@ function App() {
             <LiveTestPage
               run={currentRun}
               darkMode={darkMode}
-              onViewResults={() => setView('results')}
-              onExit={() => setView('progress')}
+              onViewResults={() => handleSetView('results')}
+              onExit={() => handleSetView('progress')}
               onCancel={() => cancelTest(currentRun.id)}
             />
           )}
 
           {view === 'progress' && currentRun && (
-            <TestProgress run={currentRun} onLiveScreen={() => setView('live')} darkMode={darkMode} />
+            <TestProgress run={currentRun} onLiveScreen={() => handleSetView('live')} darkMode={darkMode} />
           )}
 
           {view === 'results' && currentRun && (
-            <TestResults run={currentRun} onDownloadReport={downloadReport} onDownloadPdf={downloadPdfReport} onNewTest={() => { setCurrentRun(null); setView('new'); }} onBack={() => setView('history')} />
+            <TestResults run={currentRun} onDownloadReport={downloadReport} onDownloadPdf={downloadPdfReport} onNewTest={() => { setCurrentRun(null); handleSetView('new'); }} onBack={() => handleSetView('history')} />
           )}
 
           {view === 'history' && (
@@ -331,9 +367,8 @@ function App() {
           )}
 
           {view === 'compare' && (
-            <CompareRuns runs={runs} onBack={() => setView('history')} />
+            <CompareRuns runs={runs} onBack={() => handleSetView('history')} />
           )}
-
         </div>
       </main>
       {showLearnLogin && <LearnLogin onAuth={handleLearnAuth} onClose={() => setShowLearnLogin(false)} />}

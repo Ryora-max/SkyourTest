@@ -23,12 +23,10 @@ class PdfGenerator {
         const summary = run.summary || {};
         const results = run.results || [];
         const modNames = {
-          accessibility: 'Aksesibilitas', login: 'Login', navigation: 'Navigasi',
-          security: 'Keamanan', performance: 'Performa', responsive: 'Responsif',
-          form_validation: 'Validasi Form', menu_traversal: 'Menu Traversal',
-          api_response: 'API Response', cookie_session: 'Cookie & Session', content_seo: 'Content & SEO',
-          dashboard: 'Dashboard', crud: 'CRUD', payment: 'Payment', camera: 'Camera',
-          multi_role: 'Multi-Role', file_upload: 'File Upload', email_notif: 'Email & Notif', booking: 'Booking',
+          login: 'Login & Auth', dashboard: 'Dashboard Layout', navigation: 'Navigation & Menu',
+          structure: 'Structure & Layout', security: 'Security & Hack', form_validation: 'Form & Input',
+          responsive: 'Responsive & Mobile', performance: 'Performance & Network',
+          crud: 'CRUD & Interaction', api_data: 'API & Data',
         };
 
         const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
@@ -96,7 +94,7 @@ class PdfGenerator {
         drawSectionTitle('Informasi Pengujian');
         drawInfoRow('URL Target', run.url || '-');
         drawInfoRow('Browser Engine', 'Chromium');
-        const modeNames = { login_dashboard: 'Login ke Dashboard', direct_dashboard: 'Langsung Dashboard', login_only: 'Halaman Login Saja', dashboard_with_login: 'Dashboard + Menu Login' };
+        const modeNames = { login_dashboard: 'Login > Dashboard > Cek All', direct_dashboard: 'Dashboard > Cek All' };
         drawInfoRow('Mode Pengujian', modeNames[run.testMode] || 'Login ke Dashboard');
         drawInfoRow('Tanggal Eksekusi', new Date(run.startTime).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' }));
         if (run.endTime) {
@@ -119,10 +117,11 @@ class PdfGenerator {
           { label: 'Lulus', value: String(summary.passed || 0), color: passColor, bgColor: '#ccfbf1' },
           { label: 'Gagal', value: String(summary.failed || 0), color: failColor, bgColor: '#ffe4e6' },
           { label: 'Catatan', value: String(summary.notes || 0), color: warnColor, bgColor: '#fef3c7' },
+          { label: 'Skip', value: String(summary.skipped || 0), color: '#64748b', bgColor: '#f1f5f9' },
           { label: 'Pass Rate', value: `${summary.passRate || 0}%`, color: (summary.passRate || 0) >= 90 ? passColor : (summary.passRate || 0) >= 70 ? warnColor : failColor, bgColor: '#f3f4f6' },
         ];
 
-        const cardW = (pageWidth - 40) / 5;
+        const cardW = (pageWidth - 50) / 6;
         const cardY = doc.y;
         stats.forEach((stat, i) => {
           const x = colX + i * (cardW + 10);
@@ -198,8 +197,54 @@ class PdfGenerator {
           doc.moveDown(1.5);
         }
 
-        // ===== FAILED TESTS DETAIL =====
+        // ===== CRITICAL FINDINGS (Bug, Error, Vulnerability) =====
         const failedTests = results.filter(r => r.status === 'failed');
+        const noteTests = results.filter(r => r.status === 'note');
+        const criticalFindings = failedTests.filter(r =>
+          /CRITICAL|VULNERABILITY|SQL injection|XSS|IDOR|sensitive|\.env|stack trace|crash/i.test(r.actual || r.error || '')
+        );
+        const securityFindings = [...failedTests, ...noteTests].filter(r =>
+          r.module === 'Keamanan' || r.module === 'Error Detection' || r.module === 'Network Detection' || r.module === 'API Response'
+        );
+
+        if (criticalFindings.length > 0 || securityFindings.length > 0) {
+          checkPageBreak(100);
+          drawSectionTitle('Temuan Kritis (Bug, Error & Vulnerability)', failColor);
+
+          // Critical vulnerabilities first
+          if (criticalFindings.length > 0) {
+            doc.fontSize(10).fillColor(failColor).font('Helvetica-Bold').text(`CRITICAL (${criticalFindings.length}):`, colX, doc.y);
+            doc.moveDown(0.5);
+            criticalFindings.forEach((r, i) => {
+              checkPageBreak(40);
+              doc.fontSize(8).fillColor(failColor).font('Helvetica-Bold').text(`${i + 1}. [${r.testId}] ${r.title}`, colX, doc.y);
+              doc.fillColor(darkText).font('Helvetica').text(`   ${r.actual || r.error || '-'}`, colX, doc.y, { width: pageWidth });
+              doc.moveDown(0.5);
+            });
+            doc.moveDown(0.5);
+          }
+
+          // Security & error findings (notes that indicate potential issues)
+          const secNotes = securityFindings.filter(r => r.status === 'note' && !criticalFindings.includes(r));
+          if (secNotes.length > 0) {
+            doc.fontSize(10).fillColor(warnColor).font('Helvetica-Bold').text(`SECURITY & ERROR FINDINGS (${secNotes.length}):`, colX, doc.y);
+            doc.moveDown(0.5);
+            secNotes.slice(0, 15).forEach((r, i) => {
+              checkPageBreak(30);
+              doc.fontSize(7).fillColor(warnColor).font('Helvetica-Bold').text(`${i + 1}. [${r.testId}] ${r.title}`, colX, doc.y);
+              doc.fillColor(mutedText).font('Helvetica').text(`   ${r.actual || '-'}`.substring(0, 200), colX, doc.y, { width: pageWidth });
+              doc.moveDown(0.4);
+            });
+            if (secNotes.length > 15) {
+              doc.fontSize(7).fillColor(mutedText).font('Helvetica-Oblique').text(`   ...dan ${secNotes.length - 15} temuan lainnya`, colX, doc.y);
+              doc.moveDown(0.4);
+            }
+            doc.moveDown(0.5);
+          }
+          doc.moveDown(1);
+        }
+
+        // ===== FAILED TESTS DETAIL =====
         if (failedTests.length > 0) {
           checkPageBreak(100);
           drawSectionTitle(`Detail Tes Gagal (${failedTests.length})`, failColor);
@@ -271,8 +316,8 @@ class PdfGenerator {
 
           y = doc.y;
           const bg = i % 2 === 0 ? lightBg : '#ffffff';
-          const statusColor = r.status === 'passed' ? passColor : r.status === 'note' ? warnColor : failColor;
-          const statusText = r.status === 'passed' ? 'LULUS' : r.status === 'note' ? 'CATATAN' : 'GAGAL';
+          const statusColor = r.status === 'passed' ? passColor : r.status === 'note' ? warnColor : r.status === 'skipped' ? '#64748b' : failColor;
+          const statusText = r.status === 'passed' ? 'LULUS' : r.status === 'note' ? 'CATATAN' : r.status === 'skipped' ? 'SKIP' : 'GAGAL';
 
           doc.rect(colX, y, pageWidth, 18).fill(bg);
           const vals = [String(i + 1), r.testId, r.title, statusText, `${r.duration}ms`, r.category === 'optional' ? 'Opt' : '', modNames[r.module] || r.module];

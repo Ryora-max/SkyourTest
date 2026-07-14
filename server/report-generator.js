@@ -90,6 +90,7 @@ class ReportGenerator {
         { label: 'Lulus', value: summary.passed, color: 'FF16A34A' },
         { label: 'Gagal', value: summary.failed, color: 'FFDC2626' },
         { label: 'Catatan (Best Practice)', value: summary.notes || 0, color: 'FFCA8A04' },
+        { label: 'Skip', value: summary.skipped || 0, color: 'FF64748B' },
         { label: 'Tingkat Kelulusan', value: `${summary.passRate}%`, color: summary.passRate >= 90 ? 'FF16A34A' : summary.passRate >= 70 ? 'FFCA8A04' : 'FFDC2626' },
       ];
 
@@ -142,12 +143,10 @@ class ReportGenerator {
       row++;
 
       const coverModNames = {
-        accessibility: 'Aksesibilitas', login: 'Login', navigation: 'Navigasi',
-        security: 'Keamanan', performance: 'Performa', responsive: 'Responsif',
-        form_validation: 'Validasi Form', menu_traversal: 'Menu Traversal',
-        api_response: 'API Response', cookie_session: 'Cookie & Session', content_seo: 'Content & SEO',
-        dashboard: 'Dashboard', crud: 'CRUD', payment: 'Payment', camera: 'Camera',
-        multi_role: 'Multi-Role', file_upload: 'File Upload', email_notif: 'Email & Notif', booking: 'Booking',
+        login: 'Login & Auth', dashboard: 'Dashboard Layout', navigation: 'Navigation & Menu',
+        structure: 'Structure & Layout', security: 'Security & Hack', form_validation: 'Form & Input',
+        responsive: 'Responsive & Mobile', performance: 'Performance & Network',
+        crud: 'CRUD & Interaction', api_data: 'API & Data',
       };
       Object.entries(summary.modules).forEach(([mod, data]) => {
         const rate = data.total > 0 ? ((data.passed / data.total) * 100).toFixed(0) : '0';
@@ -193,12 +192,10 @@ class ReportGenerator {
     detailSheet.getRow(1).height = 35;
 
     const modNames = {
-      accessibility: 'Aksesibilitas', login: 'Login', navigation: 'Navigasi',
-      security: 'Keamanan', performance: 'Performa', responsive: 'Responsif',
-      form_validation: 'Validasi Form', menu_traversal: 'Menu Traversal',
-      api_response: 'API Response', cookie_session: 'Cookie & Session', content_seo: 'Content & SEO',
-      dashboard: 'Dashboard', crud: 'CRUD', payment: 'Payment', camera: 'Camera',
-      multi_role: 'Multi-Role', file_upload: 'File Upload', email_notif: 'Email & Notif', booking: 'Booking',
+      login: 'Login & Auth', dashboard: 'Dashboard Layout', navigation: 'Navigation & Menu',
+      structure: 'Structure & Layout', security: 'Security & Hack', form_validation: 'Form & Input',
+      responsive: 'Responsive & Mobile', performance: 'Performance & Network',
+      crud: 'CRUD & Interaction', api_data: 'API & Data',
     };
 
     results.forEach((r, i) => {
@@ -206,14 +203,17 @@ class ReportGenerator {
       const row = detailSheet.getRow(rowNum);
 
       const testDate = new Date(r.timestamp).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-      const statusText = r.status === 'passed' ? 'LULUS' : r.status === 'note' ? 'CATATAN' : 'GAGAL';
+      const statusText = r.status === 'passed' ? 'LULUS' : r.status === 'note' ? 'CATATAN' : r.status === 'skipped' ? 'SKIP' : 'GAGAL';
       const categoryText = r.category === 'optional' ? 'Opsional' : 'Primary';
       const remark = r.status === 'note'
         ? (r.actual ? `Catatan: ${r.actual}` : 'Catatan (tidak wajib)')
+        : r.status === 'skipped' ? (r.error || 'Skipped: precondition not met')
         : r.error ? `Error: ${r.error}` : (r.status === 'passed' ? 'Tes berhasil' : 'Tes gagal');
       const devFixing = r.status === 'failed'
         ? `Perlu perbaikan: ${r.title}. ${r.error || ''}`
-        : r.status === 'note' ? 'Catatan (best-practice, tidak wajib)' : 'Tidak perlu perbaikan';
+        : r.status === 'note' ? 'Catatan (best-practice, tidak wajib)'
+        : r.status === 'skipped' ? 'Skipped — precondition tidak terpenuhi'
+        : 'Tidak perlu perbaikan';
 
       const values = [
         i + 1,
@@ -246,6 +246,9 @@ class ReportGenerator {
       } else if (r.status === 'note') {
         statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
         statusCell.font = { bold: true, size: 9, color: { argb: 'FFCA8A04' } };
+      } else if (r.status === 'skipped') {
+        statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        statusCell.font = { bold: true, size: 9, color: { argb: 'FF64748B' } };
       } else if (r.status === 'failed') {
         statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
         statusCell.font = { bold: true, size: 9, color: { argb: 'FFDC2626' } };
@@ -342,7 +345,7 @@ class ReportGenerator {
       properties: { tabColor: { argb: 'FF16A34A' } },
     });
 
-    moduleSheet.columns = [{ width: 5 }, { width: 22 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 10 }, { width: 15 }];
+    moduleSheet.columns = [{ width: 5 }, { width: 22 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 10 }, { width: 15 }];
 
     moduleSheet.mergeCells('B2:F2');
     const modTitle = moduleSheet.getCell('B2');
@@ -352,7 +355,7 @@ class ReportGenerator {
     modTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF16A34A' } };
     moduleSheet.getRow(2).height = 30;
 
-    const modHeaders = ['', 'Modul', 'Total', 'Lulus', 'Gagal', 'Catatan', 'Tingkat Lulus'];
+    const modHeaders = ['', 'Modul', 'Total', 'Lulus', 'Gagal', 'Catatan', 'Skip', 'Tingkat Lulus'];
     modHeaders.forEach((h, i) => {
       if (i === 0) return;
       const cell = moduleSheet.getRow(4).getCell(i + 1);
@@ -368,7 +371,7 @@ class ReportGenerator {
       Object.entries(summary.modules).forEach(([mod, data], i) => {
         const rowNum = 5 + i;
         const rate = data.total > 0 ? ((data.passed / data.total) * 100).toFixed(1) : '0';
-        const values = ['', modNames[mod] || mod, data.total, data.passed, data.failed, data.notes || 0, `${rate}%`];
+        const values = ['', modNames[mod] || mod, data.total, data.passed, data.failed, data.notes || 0, data.skipped || 0, `${rate}%`];
         values.forEach((v, j) => {
           if (j === 0) return;
           const cell = moduleSheet.getRow(rowNum).getCell(j + 1);
@@ -378,7 +381,7 @@ class ReportGenerator {
           cell.font = { size: 10 };
         });
 
-        const rateCell = moduleSheet.getRow(rowNum).getCell(7);
+        const rateCell = moduleSheet.getRow(rowNum).getCell(8);
         const rateNum = parseFloat(rate);
         if (rateNum >= 80) {
           rateCell.font = { bold: true, color: { argb: 'FF16A34A' } };
@@ -395,7 +398,7 @@ class ReportGenerator {
       });
 
       const totalRow = 5 + Object.keys(summary.modules).length;
-      const totalValues = ['', 'TOTAL', summary.total, summary.passed, summary.failed, summary.notes || 0, `${summary.passRate}%`];
+      const totalValues = ['', 'TOTAL', summary.total, summary.passed, summary.failed, summary.notes || 0, summary.skipped || 0, `${summary.passRate}%`];
       totalValues.forEach((v, j) => {
         if (j === 0) return;
         const cell = moduleSheet.getRow(totalRow).getCell(j + 1);

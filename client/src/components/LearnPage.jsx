@@ -130,14 +130,14 @@ function OverviewTab() {
   return (
     <>
       <Card title="Apa itu SkyourTest?" icon={BookOpen}>
-        <p>SkyourTest adalah platform <strong>Quality Assurance (QA) Automation</strong> yang menjalankan pengujian otomatis terhadap website target. Platform ini menggunakan <strong>Playwright</strong> untuk mengotomatiskan browser, menjalankan 300+ test case across 19 modul, dan menghasilkan laporan profesional dalam format Excel dan PDF.</p>
+        <p>SkyourTest adalah platform <strong>Quality Assurance (QA) Automation</strong> yang menjalankan pengujian otomatis terhadap website target. Platform ini menggunakan <strong>Playwright</strong> untuk mengotomatiskan browser, menjalankan 100 test case kritis across 10 modul, dan menghasilkan laporan profesional dalam format Excel dan PDF.</p>
         <p>Aplikasi ini terdiri dari <strong>frontend React</strong> (Vite + Tailwind CSS) dan <strong>backend Express.js</strong> yang menjalankan Playwright, mengelola WebSocket untuk live streaming, dan menyimpan riwayat tes.</p>
       </Card>
 
       <Card title="Fitur Utama" icon={Zap}>
         <ul className="space-y-2">
-          <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" /> <span><strong>19 Modul Tes:</strong> Dashboard, Aksesibilitas, Login, Navigasi, Keamanan, Performa, Responsif, Form Validation, Menu Traversal, API Response, Cookie & Session, Content & SEO, CRUD, Payment, Camera, Multi-Role, File Upload, Email & Notif, Booking</span></li>
-          <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" /> <span><strong>4 Mode Pengujian:</strong> Login ke Dashboard, Langsung Dashboard, Halaman Login Saja, Dashboard + Menu Login</span></li>
+          <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" /> <span><strong>10 Modul Tes:</strong> Login & Auth, Dashboard Layout, Navigation & Menu, Structure & Layout, Security & Hack, Form & Input, Responsive & Mobile, Performance & Network, CRUD & Interaction, API & Data</span></li>
+          <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" /> <span><strong>2 Mode Pengujian:</strong> Login {'>'} Dashboard {'>'} Cek All, Dashboard {'>'} Cek All</span></li>
           <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" /> <span><strong>Live Browser Streaming:</strong> Pantau tes real-time via WebSocket</span></li>
           <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" /> <span><strong>Laporan Excel & PDF:</strong> Detail test case, summary per modul, dan dev fixing recommendations</span></li>
           <li className="flex gap-2"><CheckCircle2 className="w-4 h-4 text-teal-500 flex-shrink-0 mt-0.5" /> <span><strong>Riwayat & Compare:</strong> Simpan riwayat tes dan bandingkan hasil antar run</span></li>
@@ -225,7 +225,7 @@ function StructureTab({ expandedSections, toggleSection }) {
         { path: 'client/src/components/TestResults.jsx', desc: 'Hasil tes dengan grouping per modul, filter, dan download' },
         { path: 'client/src/components/RunHistory.jsx', desc: 'Riwayat tes dengan delete dan download' },
         { path: 'client/src/components/CompareRuns.jsx', desc: 'Perbandingan hasil antar run' },
-        { path: 'client/src/components/ParticleBackground.jsx', desc: 'Canvas particle animation dengan dark mode support' },
+        { path: 'client/src/components/ParticleBackground.jsx', desc: 'Canvas wave animation dengan dark mode support' },
         { path: 'client/src/components/LearnLogin.jsx', desc: 'Login gate untuk hidden learn page' },
         { path: 'client/src/components/LearnPage.jsx', desc: 'Halaman dokumentasi dengan 9 tabs (this page!)' },
       ],
@@ -235,7 +235,7 @@ function StructureTab({ expandedSections, toggleSection }) {
       name: 'server/ — Backend Express',
       files: [
         { path: 'server/index.js', desc: 'Express server: REST API, WebSocket server, run management, report endpoints' },
-        { path: 'server/test-runner.js', desc: 'Core test runner: 19 modul tes, 300+ test case, Playwright automation, detect website' },
+        { path: 'server/test-runner.js', desc: 'Core test runner: 10 modul tes, 100 test case kritis, Playwright automation, detect website' },
         { path: 'server/report-generator.js', desc: 'Excel report generator dengan 4 sheets: Cover, Detail, Failed, Module Summary' },
         { path: 'server/pdf-generator.js', desc: 'PDF report generator dengan cover, summary cards, module breakdown, failed detail' },
       ],
@@ -312,31 +312,22 @@ function ApiTab() {
 
 function ModulesTab() {
   const modules = [
-    { id: 'dashboard', name: 'Dashboard', count: 24, tests: ['Dashboard dimuat', 'Navigasi tersedia', 'Heading jelas', 'Cards/widgets', 'Responsive', 'Link berfungsi', 'Loading state', 'Table/list', 'User info', 'Console errors', 'Search/filter', 'Breadcrumb', 'Notification', 'Footer', 'Dark mode toggle', 'Data freshness', 'Error handling', 'Empty state', 'Broken images', 'Viewport extremes', 'Unauthenticated access', 'Rapid navigation', 'Layout shift', 'Interactive elements'] },
-    { id: 'accessibility', name: 'Aksesibilitas', count: 23, tests: ['Title tag', 'Meta description', 'Favicon', 'Alt text', 'Lang attribute', 'Keyboard nav', 'Color contrast', 'ARIA labels', 'Focus visible', 'Skip links', 'Modal focus trap'] },
-    { id: 'login', name: 'Login & Autentikasi', count: 30, tests: ['Form terdeteksi', 'Field username', 'Password masking', 'Submit button', 'Empty validation', 'Invalid login', 'Forgot password link', 'Register link', 'Valid login', 'Dashboard tampil', 'Logout button', 'Session persist', 'SQL injection', 'XSS prevention', 'Rate limiting', 'Autocomplete', 'Caps lock', 'Remember me', 'Back button security', 'Concurrent login', 'Case sensitivity', 'Whitespace', 'Password length', 'Special chars', 'Boundary value', 'Generic error', 'Session timeout', 'Cookie clear', 'HTTPS submission', 'Multi-tab session'] },
-    { id: 'navigation', name: 'Navigasi', count: 20, tests: ['Load time', 'Internal links', 'Menu structure', 'Footer links', 'Heading hierarchy', 'Back/forward', 'Deep linking', 'Search function', 'Pagination', 'Form autocomplete'] },
-    { id: 'security', name: 'Keamanan', count: 22, tests: ['HTTPS', 'CSRF tokens', 'CSP headers', 'Security headers', 'Cookie flags', 'Eval usage', 'XSS vectors', 'CORS policy', 'Clickjacking protection'] },
-    { id: 'performance', name: 'Performa', count: 19, tests: ['Page load', 'FCP', 'LCP', 'CLS', 'Long tasks', 'Cache headers', 'Request count', 'Page weight', 'Time to Interactive'] },
-    { id: 'responsive', name: 'Responsif', count: 16, tests: ['Mobile viewport', 'Tablet', 'Desktop', 'Landscape', 'Text overflow', 'Modal responsive', 'Touch target spacing'] },
-    { id: 'form_validation', name: 'Validasi Form', count: 15, tests: ['Required fields', 'Email type', 'Maxlength', 'Autocomplete', 'Pattern validation', 'XSS in form', 'Label association', 'Form reset', 'Required field validation'] },
-    { id: 'menu_traversal', name: 'Menu Traversal', count: 12, tests: ['Nav links click', 'Footer links', 'CTA buttons', 'Dropdown menu', 'Modal open/close', 'Search toggle', 'Tab/accordion', 'External links'] },
-    { id: 'api_response', name: 'API Response', count: 10, tests: ['5xx errors', 'Response time', 'Content-type', 'Mixed content', 'Cache headers', 'CORS', 'Rate limit', 'Credentials'] },
-    { id: 'cookie_session', name: 'Cookie & Session', count: 9, tests: ['Cookie flags', 'Path scope', 'Session cookies', 'Session fixation', 'Sensitive data', 'Logout cleanup'] },
-    { id: 'content_seo', name: 'Content & SEO', count: 10, tests: ['Meta description', 'Open Graph', 'Canonical URL', 'Robots.txt', 'Sitemap', 'Structured data', 'Mobile-friendly'] },
-    { id: 'crud', name: 'CRUD Operations', count: 17, tests: ['Table detected', 'Add button', 'Create form', 'Read data', 'Update record', 'Delete record', 'Cancel operation', 'Negative ID', 'Boundary value', 'XSS in CRUD', 'Unicode input', 'Duplicate entry', 'Pagination', 'Search filter', 'Empty state', 'Confirmation dialog', 'Success notification'] },
-    { id: 'payment', name: 'Payment Flow', count: 10, tests: ['Payment form detected', 'HTTPS for payment', 'Card number input', 'Card masking', 'Payment method selection', 'Pay button enabled', 'Empty field validation', 'Card formatting', 'CVV input', 'Expiry date input'] },
-    { id: 'camera', name: 'Camera & Video', count: 8, tests: ['Camera element detected', 'Video attributes', 'Capture button', 'Permission handling', 'Canvas snapshot', 'Instruction text', 'Camera switch', 'Console errors'] },
-    { id: 'multi_role', name: 'Multi-Role Login', count: 7, tests: ['Role selector', 'Register with role', 'Admin dashboard menu', 'RBAC access control', 'Logout & session clear', 'Reset password', 'SSO/OAuth button'] },
-    { id: 'file_upload', name: 'File Upload & Excel', count: 8, tests: ['Input file detected', 'Upload button', 'File type validation', 'Drag & drop area', 'Button disabled state', 'Multiple file support', 'Progress indicator', 'Error handling'] },
-    { id: 'email_notif', name: 'Email & Notification', count: 8, tests: ['Register link', 'Email input in register', 'Reset password link', 'Toast/notification container', 'Empty email validation', 'Invalid email format', 'Verify email link', 'Dismiss/close button'] },
-    { id: 'booking', name: 'Booking & Scheduling', count: 9, tests: ['Booking element', 'Book button', 'Date/time picker', 'Calendar grid', 'Referral code input', 'Cancellation button', 'Consultant list', 'Form validation', 'Success message container'] },
+    { id: 'login', name: 'Login & Auth', count: 12, tests: ['TC-L-001: Form login terdeteksi', 'TC-L-002: Field username/email', 'TC-L-003: Password masking', 'TC-L-004: Submit button', 'TC-L-005: Empty field validation', 'TC-L-006: Invalid login rejected', 'TC-L-007: SQL injection blocked', 'TC-L-008: XSS payload blocked', 'TC-L-009: Valid login → dashboard', 'TC-L-010: Session persist', 'TC-L-011: Back button security', 'TC-L-012: Logout clears session'] },
+    { id: 'dashboard', name: 'Dashboard Layout', count: 10, tests: ['TC-D-001: Dashboard dimuat', 'TC-D-002: Heading/title jelas', 'TC-D-003: Cards/widgets', 'TC-D-004: Navigasi/sidebar/header', 'TC-D-005: User info/profile', 'TC-D-006: Breadcrumb', 'TC-D-007: Notification container', 'TC-D-008: Footer', 'TC-D-009: Empty state handling', 'TC-D-010: No layout broken'] },
+    { id: 'navigation', name: 'Navigation & Menu', count: 10, tests: ['TC-N-001: Internal links', 'TC-N-002: Menu structure', 'TC-N-003: Hamburger menu mobile', 'TC-N-004: Footer links', 'TC-N-005: Scroll behavior', 'TC-N-006: Dropdown menu', 'TC-N-007: Tabs/accordion', 'TC-N-008: Deep linking', 'TC-N-009: Back/forward nav', 'TC-N-010: Search function'] },
+    { id: 'structure', name: 'Structure & Layout', count: 10, tests: ['TC-S-001: HTML lang attribute', 'TC-S-002: Meta viewport', 'TC-S-003: Heading hierarchy', 'TC-S-004: Semantic HTML', 'TC-S-005: Alt text images', 'TC-S-006: Input label association', 'TC-S-007: Favicon', 'TC-S-008: Focus indicator', 'TC-S-009: Color contrast WCAG AA', 'TC-S-010: Lang sesuai konten'] },
+    { id: 'security', name: 'Security & Hack', count: 15, tests: ['TC-SEC-001: HTTPS enabled', 'TC-SEC-002: Security headers', 'TC-SEC-003: CSRF token', 'TC-SEC-004: Cookie flags', 'TC-SEC-005: XSS injection', 'TC-SEC-006: SQL injection URL', 'TC-SEC-007: IDOR/access control', 'TC-SEC-008: Clickjacking protection', 'TC-SEC-009: Path traversal', 'TC-SEC-010: SSRF', 'TC-SEC-011: Sensitive data leak', 'TC-SEC-012: Eval usage', 'TC-SEC-013: CORS policy', 'TC-SEC-014: Mixed content', 'TC-SEC-015: Server header leak'] },
+    { id: 'form_validation', name: 'Form & Input', count: 10, tests: ['TC-FV-001: Required fields', 'TC-FV-002: Email validation', 'TC-FV-003: Maxlength', 'TC-FV-004: Autocomplete', 'TC-FV-005: XSS in form', 'TC-FV-006: Label association', 'TC-FV-007: Form reset', 'TC-FV-008: Edge case inputs', 'TC-FV-009: Double submit race', 'TC-FV-010: Pattern validation'] },
+    { id: 'responsive', name: 'Responsive & Mobile', count: 8, tests: ['TC-R-001: Mobile 375x667', 'TC-R-002: Tablet 768x1024', 'TC-R-003: Desktop 1920x1080', 'TC-R-004: Landscape', 'TC-R-005: Hamburger mobile', 'TC-R-006: Touch target 24px', 'TC-R-007: Text readability 10px', 'TC-R-008: No text overflow'] },
+    { id: 'performance', name: 'Performance & Network', count: 8, tests: ['TC-P-001: DOM load < 10s', 'TC-P-002: Full load < 20s', 'TC-P-003: Request count < 100', 'TC-P-004: No 4xx/5xx', 'TC-P-005: Cache headers', 'TC-P-006: Compression', 'TC-P-007: Console errors', 'TC-P-008: Network errors'] },
+    { id: 'crud', name: 'CRUD & Interaction', count: 10, tests: ['TC-CRUD-001: Table/data list', 'TC-CRUD-002: Create button', 'TC-CRUD-003: Create form opens', 'TC-CRUD-004: Read header columns', 'TC-CRUD-005: Edit button', 'TC-CRUD-006: Delete button', 'TC-CRUD-007: Cancel/close', 'TC-CRUD-008: Search/filter', 'TC-CRUD-009: Pagination', 'TC-CRUD-010: Notification container'] },
+    { id: 'api_data', name: 'API & Data', count: 7, tests: ['TC-API-001: No 5xx errors', 'TC-API-002: Response time < 3s', 'TC-API-003: Content-Type header', 'TC-API-004: Sensitive data leak', 'TC-API-005: Cookie/session security', 'TC-API-006: Rate limiting', 'TC-API-007: Verbose error messages'] },
   ];
 
   return (
     <>
-      <Card title="19 Modul Tes — 300+ Test Case" icon={TestTube}>
-        <p>Setiap modul berisi test case yang dijalankan secara berurutan. Modul <strong>Login</strong> dijalankan pertama (untuk autentikasi), diikuti <strong>Dashboard</strong>, lalu modul lainnya.</p>
+      <Card title="10 Modul Tes — 100 Test Case Kritis" icon={TestTube}>
+        <p>Setiap modul berisi test case fungsional kritis yang dijalankan secara berurutan. Modul <strong>Login & Auth</strong> dijalankan pertama (untuk autentikasi), diikuti <strong>Dashboard Layout</strong>, lalu modul lainnya. Standar Senior QC/QA dengan deteksi hacker-style (SQL injection, XSS, IDOR, path traversal, SSRF).</p>
       </Card>
 
       {modules.map(mod => (

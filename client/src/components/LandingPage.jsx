@@ -1,40 +1,51 @@
-import { ShieldCheck, Rocket, Globe, Monitor, FileText, Zap, Code2, Database, ArrowRight, Moon, Sun, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Rocket, Globe, Monitor, FileText, Zap, Code2, ArrowRight, Moon, Sun } from 'lucide-react';
 import Logo from './Logo';
 import ParticleBackground from './ParticleBackground';
 
 export default function LandingPage({ onEnterApp, darkMode, toggleDarkMode }) {
   const features = [
-    { icon: Rocket, title: '19 Modul Tes Otomatis', desc: 'Dashboard, Aksesibilitas, Login, Navigasi, Keamanan, Performa, Responsif, Form, Menu, API, Cookie, SEO, CRUD, Payment, Camera, Multi-Role, File Upload, Email, Booking' },
+    { icon: Rocket, title: '10 Modul Tes Kritis', desc: 'Login & Auth, Dashboard Layout, Navigation & Menu, Structure & Layout, Security & Hack, Form & Input, Responsive & Mobile, Performance & Network, CRUD & Interaction, API & Data' },
     { icon: Monitor, title: 'Live Browser Streaming', desc: 'Pantau tes berjalan secara real-time via WebSocket dengan live browser view' },
     { icon: FileText, title: 'Laporan Excel & PDF', desc: 'Generate laporan profesional dalam format Excel dan PDF dengan detail lengkap' },
-    { icon: Zap, title: '300+ Test Case', desc: 'Setiap modul memiliki test case komprehensif yang menutupi berbagai skenario' },
+    { icon: Zap, title: '100+ Test Case Kritis', desc: 'Setiap modul berisi test case fungsional kritis dengan standar Senior QC/QA' },
     { icon: Globe, title: 'Multi-Mode Pengujian', desc: 'Login Dashboard, Direct Dashboard, Login Only, atau Dashboard + Menu Login' },
     { icon: Code2, title: 'Playwright Engine', desc: 'Didukung oleh Playwright untuk pengujian browser otomatis yang andal' },
   ];
 
   const stats = [
-    { value: '19', label: 'Modul Tes' },
-    { value: '300+', label: 'Test Case' },
+    { value: '10', label: 'Modul Tes' },
+    { value: '100+', label: 'Test Case' },
     { value: '4', label: 'Mode Pengujian' },
     { value: '2', label: 'Format Laporan' },
   ];
 
+  const techStack = [
+    { name: 'React 18', desc: 'Frontend UI' },
+    { name: 'Express', desc: 'Backend API' },
+    { name: 'Playwright', desc: 'Browser Automation' },
+    { name: 'WebSocket', desc: 'Live Streaming' },
+    { name: 'Tailwind CSS', desc: 'Styling' },
+    { name: 'ExcelJS', desc: 'Excel Reports' },
+    { name: 'PDFKit', desc: 'PDF Reports' },
+    { name: 'Vite', desc: 'Build Tool' },
+  ];
+
   return (
-    <div className="min-h-screen relative overflow-hidden">
+    <div className="min-h-screen relative overflow-hidden font-body">
       <ParticleBackground darkMode={darkMode} />
 
       {/* Top nav */}
-      <nav className="relative z-10 flex items-center justify-between px-6 sm:px-10 py-5">
+      <nav className="relative z-10 flex items-center justify-between px-6 sm:px-10 py-5 max-w-7xl mx-auto">
         <div className="flex items-center gap-3">
           <Logo size="md" />
           <div>
-            <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-tight">SkyourTest</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">QC Automation</p>
+            <h1 className="text-lg font-heading font-bold text-primary-700 dark:text-primary-300 leading-tight">SkyourTest</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">QC Automation Platform</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={toggleDarkMode} className="p-2.5 rounded-xl glass-card hover:scale-105 transition-transform">
-            {darkMode ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5 text-blue-600" />}
+          <button onClick={toggleDarkMode} className="p-2.5 rounded-2xl glass-card hover:scale-105 transition-transform">
+            {darkMode ? <Sun className="w-5 h-5 text-amber-500" /> : <Moon className="w-5 h-5 text-primary-600" />}
           </button>
           <button onClick={onEnterApp} className="btn-primary gap-2 text-sm px-5 py-2.5">
             Mulai <ArrowRight className="w-4 h-4" />
@@ -43,23 +54,23 @@ export default function LandingPage({ onEnterApp, darkMode, toggleDarkMode }) {
       </nav>
 
       {/* Hero */}
-      <section className="relative z-10 max-w-5xl mx-auto px-6 sm:px-10 pt-12 sm:pt-20 pb-16 text-center">
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-card mb-6 animate-fade-in">
-          <ShieldCheck className="w-4 h-4 text-teal-500" />
+      <section className="relative z-10 max-w-5xl mx-auto px-6 sm:px-10 pt-12 sm:pt-24 pb-16 text-center animate-fade-in">
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-card mb-8" style={{ animation: 'float 6s ease-in-out infinite' }}>
+          <ShieldCheck className="w-4 h-4 text-primary-500" />
           <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Quality Assurance Automation</span>
         </div>
 
-        <h1 className="text-4xl sm:text-6xl font-black text-slate-900 dark:text-slate-100 mb-6 animate-fade-in-up leading-tight">
-          Tes Kualitas Website<br />
-          <span className="bg-gradient-to-r from-blue-500 via-sky-500 to-cyan-500 bg-clip-text text-transparent">Secara Otomatis</span>
+        <h1 className="font-heading text-4xl sm:text-6xl font-extrabold text-slate-900 dark:text-slate-100 mb-6 leading-tight tracking-tight">
+          <span className="block">Tes Kualitas Website</span>
+          <span className="block bg-gradient-to-r from-primary-500 to-sky-500 bg-clip-text text-transparent">Secara Otomatis</span>
         </h1>
 
-        <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto mb-10 animate-fade-in-up-delay">
-          Platform otomatisasi pengujian kualitas website dengan 19 modul tes, 300+ test case,
-          live browser streaming, dan laporan profesional Excel & PDF.
+        <p className="font-body text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+          Platform otomatisasi pengujian kualitas website dengan 10 modul tes, 100+ test case,
+          live browser streaming, dan laporan profesional Excel &amp; PDF.
         </p>
 
-        <div className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in-up-delay-2">
+        <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <button onClick={onEnterApp} className="btn-primary gap-2 text-base px-8 py-3.5">
             <Rocket className="w-5 h-5" /> Mulai Tes Sekarang
           </button>
@@ -69,31 +80,33 @@ export default function LandingPage({ onEnterApp, darkMode, toggleDarkMode }) {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-16 animate-slide-up">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-20">
           {stats.map((stat, i) => (
-            <div key={i} className="glass-card p-5 rounded-2xl text-center">
-              <p className="text-3xl font-black bg-gradient-to-br from-blue-500 to-sky-500 bg-clip-text text-transparent">{stat.value}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{stat.label}</p>
+            <div key={i} className="glass-card p-6 rounded-3xl text-center animate-slide-up" style={{ animationDelay: `${i * 0.1}s` }}>
+              <p className="font-heading text-3xl font-extrabold bg-gradient-to-br from-primary-500 to-sky-500 bg-clip-text text-transparent">{stat.value}</p>
+              <p className="font-body text-xs text-slate-500 dark:text-slate-400 mt-2">{stat.label}</p>
             </div>
           ))}
         </div>
       </section>
 
       {/* Features */}
-      <section id="features" className="relative z-10 max-w-5xl mx-auto px-6 sm:px-10 py-16">
-        <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 text-center mb-4 animate-slide-up">Fitur Unggulan</h2>
-        <p className="text-slate-500 dark:text-slate-400 text-center mb-12 max-w-xl mx-auto">Semua yang Anda butuhkan untuk pengujian kualitas website otomatis</p>
+      <section id="features" className="relative z-10 max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <div className="text-center mb-14 animate-slide-up">
+          <h2 className="font-heading text-3xl sm:text-4xl font-bold text-slate-900 dark:text-slate-100 mb-4">Fitur Unggulan</h2>
+          <p className="font-body text-slate-500 dark:text-slate-400 max-w-xl mx-auto">Semua yang Anda butuhkan untuk pengujian kualitas website otomatis</p>
+        </div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {features.map((feat, i) => {
             const Icon = feat.icon;
             return (
-              <div key={i} className="glass-card p-6 rounded-2xl hover:scale-[1.02] transition-transform animate-slide-up" style={{ animationDelay: `${i * 80}ms` }}>
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500/20 to-sky-500/20 rounded-xl flex items-center justify-center mb-4">
-                  <Icon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+              <div key={i} className="glass-card p-6 rounded-3xl animate-slide-up" style={{ animationDelay: `${i * 0.08}s` }}>
+                <div className="w-12 h-12 bg-gradient-to-br from-primary-500/15 to-sky-500/15 rounded-2xl flex items-center justify-center mb-4">
+                  <Icon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
                 </div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-2">{feat.title}</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">{feat.desc}</p>
+                <h3 className="font-heading text-base font-bold text-slate-900 dark:text-slate-100 mb-2">{feat.title}</h3>
+                <p className="font-body text-sm text-slate-500 dark:text-slate-400 leading-relaxed">{feat.desc}</p>
               </div>
             );
           })}
@@ -101,32 +114,26 @@ export default function LandingPage({ onEnterApp, darkMode, toggleDarkMode }) {
       </section>
 
       {/* Tech Stack */}
-      <section className="relative z-10 max-w-5xl mx-auto px-6 sm:px-10 py-16">
-        <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 text-center mb-12 animate-slide-up">Tech Stack</h2>
+      <section className="relative z-10 max-w-5xl mx-auto px-6 sm:px-10 py-20">
+        <div className="text-center mb-14 animate-slide-up">
+          <h2 className="font-heading text-3xl sm:text-4xl font-bold text-slate-900 dark:text-slate-100">Tech Stack</h2>
+        </div>
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { name: 'React 18', desc: 'Frontend UI' },
-            { name: 'Express', desc: 'Backend API' },
-            { name: 'Playwright', desc: 'Browser Automation' },
-            { name: 'WebSocket', desc: 'Live Streaming' },
-            { name: 'Tailwind CSS', desc: 'Styling' },
-            { name: 'ExcelJS', desc: 'Excel Reports' },
-            { name: 'PDFKit', desc: 'PDF Reports' },
-            { name: 'Vite', desc: 'Build Tool' },
-          ].map((tech, i) => (
-            <div key={i} className="glass-card p-4 rounded-xl text-center animate-fade-in" style={{ animationDelay: `${i * 50}ms` }}>
-              <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{tech.name}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{tech.desc}</p>
+          {techStack.map((tech, i) => (
+            <div key={i} className="glass-card p-4 rounded-2xl text-center animate-slide-up" style={{ animationDelay: `${i * 0.05}s` }}>
+              <p className="font-heading text-sm font-bold text-slate-900 dark:text-slate-100">{tech.name}</p>
+              <p className="font-body text-xs text-slate-500 dark:text-slate-400 mt-1">{tech.desc}</p>
             </div>
           ))}
         </div>
       </section>
 
       {/* CTA */}
-      <section className="relative z-10 max-w-3xl mx-auto px-6 sm:px-10 py-20 text-center">
-        <div className="glass-card p-10 sm:p-12 rounded-3xl animate-slide-up">
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100 mb-4">Siap memulai pengujian?</h2>
-          <p className="text-slate-500 dark:text-slate-400 mb-8">Jalankan tes otomatis dan dapatkan laporan profesional dalam hitungan menit</p>
+      <section className="relative z-10 max-w-3xl mx-auto px-6 sm:px-10 py-24 text-center">
+        <div className="glass-card p-10 sm:p-14 rounded-3xl animate-scale-in">
+          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100 mb-4">Siap memulai pengujian?</h2>
+          <p className="font-body text-slate-500 dark:text-slate-400 mb-8 max-w-lg mx-auto">Jalankan tes otomatis dan dapatkan laporan profesional dalam hitungan menit</p>
           <button onClick={onEnterApp} className="btn-primary gap-2 text-base px-8 py-3.5">
             <Rocket className="w-5 h-5" /> Buka Dashboard
           </button>
@@ -134,8 +141,13 @@ export default function LandingPage({ onEnterApp, darkMode, toggleDarkMode }) {
       </section>
 
       {/* Footer */}
-      <footer className="relative z-10 py-8 text-center">
-        <p className="text-xs text-slate-400 dark:text-slate-500">SkyourTest QC Automation Platform</p>
+      <footer className="relative z-10 py-10 text-center border-t border-primary-700/10 dark:border-primary-700/20">
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <Logo size="sm" />
+          <span className="font-heading font-bold text-primary-700 dark:text-primary-300">SkyourTest</span>
+        </div>
+        <p className="font-body text-xs text-slate-500 dark:text-slate-500">QC Automation Platform</p>
+        <p className="font-body text-xs text-slate-400/60 dark:text-slate-600 mt-2">&copy; 2026 SkyourTest. All rights reserved.</p>
       </footer>
     </div>
   );

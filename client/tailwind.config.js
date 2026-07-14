@@ -19,6 +19,8 @@ export default {
       },
       fontFamily: {
         sans: ['Outfit', 'system-ui', 'sans-serif'],
+        heading: ['"Plus Jakarta Sans"', 'Outfit', 'system-ui', 'sans-serif'],
+        body: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
         pixel: ['"Press Start 2P"', 'monospace'],
       },

@@ -1,10 +1,10 @@
 import { History, Download, Trash2, Eye, Globe, CheckCircle2, XCircle, FileText } from 'lucide-react';
 
 const MODUL_NAMES = {
-  accessibility: 'Aksesibilitas', login: 'Login', navigation: 'Navigasi',
-  security: 'Keamanan', performance: 'Performa', responsive: 'Responsif',
-  form_validation: 'Validasi Form', menu_traversal: 'Menu Traversal',
-  api_response: 'API Response', cookie_session: 'Cookie & Session', content_seo: 'Content & SEO',
+    login: 'Login & Auth', dashboard: 'Dashboard Layout', navigation: 'Navigation & Menu',
+  structure: 'Structure & Layout', security: 'Security & Hack', form_validation: 'Form & Input',
+  responsive: 'Responsive & Mobile', performance: 'Performance & Network',
+  crud: 'CRUD & Interaction', api_data: 'API & Data',
 };
 
 function RunHistory({ runs, onView, onDelete, onDownloadReport, onDownloadPdf }) {
@@ -40,7 +40,7 @@ function RunHistory({ runs, onView, onDelete, onDownloadReport, onDownloadPdf })
         {runs.map((run, idx) => {
           const summary = run.summary;
           return (
-            <div key={run.id} className="glass-card p-4 sm:p-5 animate-slide-up" style={{ animationDelay: `${idx * 50}ms` }}>
+            <div key={run.id} className="glass-card p-4 sm:p-5 animate-slide-up">
               <div className="flex items-start sm:items-center justify-between gap-3 sm:gap-4 flex-col sm:flex-row">
                 <div className="flex-1 min-w-0 w-full">
                   <div className="flex items-center gap-2 mb-2">

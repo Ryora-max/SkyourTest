@@ -2,19 +2,18 @@ import { useState } from 'react';
 import { Download, Plus, CheckCircle2, XCircle, Clock, Globe, Chrome, Globe2, Monitor, ChevronDown, ChevronRight, FileText, AlertCircle, ArrowLeft } from 'lucide-react';
 
 const BROWSER_ICONS = { chromium: Chrome, firefox: Globe2, webkit: Monitor };
-const STATUS_ICONS = { passed: CheckCircle2, failed: XCircle, note: AlertCircle };
+const STATUS_ICONS = { passed: CheckCircle2, failed: XCircle, note: AlertCircle, skipped: ChevronDown };
 const STATUS_COLORS = {
   passed: { bg: 'bg-teal-50/60 dark:bg-teal-900/20', text: 'text-teal-700 dark:text-teal-400', icon: 'text-teal-500', badge: 'badge-pass', label: 'LULUS' },
   failed: { bg: 'bg-rose-50/60 dark:bg-rose-900/20', text: 'text-rose-700 dark:text-rose-400', icon: 'text-rose-500', badge: 'badge-fail', label: 'GAGAL' },
   note: { bg: 'bg-amber-50/60 dark:bg-amber-900/20', text: 'text-amber-700 dark:text-amber-400', icon: 'text-amber-500', badge: 'badge-note', label: 'CATATAN' },
+  skipped: { bg: 'bg-slate-50/60 dark:bg-slate-800/20', text: 'text-slate-600 dark:text-slate-400', icon: 'text-slate-400', badge: 'badge-skip', label: 'SKIP' },
 };
 const MODUL_NAMES = {
-  accessibility: 'Aksesibilitas', login: 'Login', navigation: 'Navigasi',
-  security: 'Keamanan', performance: 'Performa', responsive: 'Responsif',
-  form_validation: 'Validasi Form', menu_traversal: 'Menu Traversal',
-  api_response: 'API Response', cookie_session: 'Cookie & Session', content_seo: 'Content & SEO',
-  dashboard: 'Dashboard', crud: 'CRUD', payment: 'Payment', camera: 'Camera',
-  multi_role: 'Multi-Role', file_upload: 'File Upload', email_notif: 'Email & Notif', booking: 'Booking',
+    login: 'Login & Auth', dashboard: 'Dashboard Layout', navigation: 'Navigation & Menu',
+  structure: 'Structure & Layout', security: 'Security & Hack', form_validation: 'Form & Input',
+  responsive: 'Responsive & Mobile', performance: 'Performance & Network',
+  crud: 'CRUD & Interaction', api_data: 'API & Data',
 };
 
 function PassRateRing({ rate, passed, failed, total }) {
@@ -54,18 +53,20 @@ function TestResults({ run, onDownloadReport, onDownloadPdf, onNewTest, onBack }
     const passed = results.filter(r => r.status === 'passed').length;
     const failed = results.filter(r => r.status === 'failed').length;
     const notes = results.filter(r => r.status === 'note').length;
+    const skipped = results.filter(r => r.status === 'skipped').length;
     const totalDuration = results.reduce((sum, r) => sum + (r.duration || 0), 0);
     const moduleSummary = {};
     results.forEach(r => {
-      if (!moduleSummary[r.module]) moduleSummary[r.module] = { passed: 0, failed: 0, notes: 0, total: 0 };
+      if (!moduleSummary[r.module]) moduleSummary[r.module] = { passed: 0, failed: 0, notes: 0, skipped: 0, total: 0 };
       moduleSummary[r.module].total++;
       if (r.status === 'passed') moduleSummary[r.module].passed++;
       else if (r.status === 'failed') moduleSummary[r.module].failed++;
       else if (r.status === 'note') moduleSummary[r.module].notes++;
+      else if (r.status === 'skipped') moduleSummary[r.module].skipped++;
     });
     const functional = passed + failed;
     const passRate = functional > 0 ? Math.round((passed / functional) * 100) : 0;
-    summary = { passed, failed, notes, total: results.length, passRate, totalDuration, modules: moduleSummary };
+    summary = { passed, failed, notes, skipped, total: results.length, passRate, totalDuration, modules: moduleSummary };
   }
 
   // Handle error state
@@ -136,41 +137,43 @@ function TestResults({ run, onDownloadReport, onDownloadPdf, onNewTest, onBack }
       </div>
 
       {/* Stats + Progress Ring */}
-      <div className="glass-card p-4 sm:p-6 mb-6 animate-slide-up">
-        <div className="flex flex-col lg:flex-row items-center gap-4 sm:gap-6">
-          <PassRateRing rate={summary.passRate} passed={summary.passed} failed={summary.failed} total={summary.total} />
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 flex-1 w-full">
-            <div className="stat-card">
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Total Tes</p>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{summary.total}</p>
-            </div>
-            <div className="stat-card-green">
-              <div className="flex items-center gap-2 mb-1">
-                <CheckCircle2 className="w-4 h-4 text-teal-500" />
-                <p className="text-xs text-slate-500 dark:text-slate-400">Lulus</p>
+      <div className="mb-6 animate-slide-up">
+        <div className="glass-card p-4 sm:p-6">
+          <div className="flex flex-col lg:flex-row items-center gap-4 sm:gap-6">
+            <PassRateRing rate={summary.passRate} passed={summary.passed} failed={summary.failed} total={summary.total} />
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 flex-1 w-full">
+              <div className="stat-card">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Total Tes</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{summary.total}</p>
               </div>
-              <p className="text-2xl font-bold text-teal-600 dark:text-teal-400">{summary.passed}</p>
-            </div>
-            <div className="stat-card-red">
-              <div className="flex items-center gap-2 mb-1">
-                <XCircle className="w-4 h-4 text-rose-500" />
-                <p className="text-xs text-slate-500 dark:text-slate-400">Gagal</p>
+              <div className="stat-card-green">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCircle2 className="w-4 h-4 text-teal-500" />
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Lulus</p>
+                </div>
+                <p className="text-2xl font-bold text-teal-600 dark:text-teal-400">{summary.passed}</p>
               </div>
-              <p className="text-2xl font-bold text-rose-600 dark:text-rose-400">{summary.failed}</p>
-            </div>
-            <div className="stat-card-amber">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertCircle className="w-4 h-4 text-amber-500" />
-                <p className="text-xs text-slate-500 dark:text-slate-400">Catatan</p>
+              <div className="stat-card-red">
+                <div className="flex items-center gap-2 mb-1">
+                  <XCircle className="w-4 h-4 text-rose-500" />
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Gagal</p>
+                </div>
+                <p className="text-2xl font-bold text-rose-600 dark:text-rose-400">{summary.failed}</p>
               </div>
-              <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{summary.notes || 0}</p>
-            </div>
-            <div className="stat-card">
-              <div className="flex items-center gap-2 mb-1">
-                <Clock className="w-4 h-4 text-slate-400" />
-                <p className="text-xs text-slate-500 dark:text-slate-400">Durasi</p>
+              <div className="stat-card-amber">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertCircle className="w-4 h-4 text-amber-500" />
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Catatan</p>
+                </div>
+                <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{summary.notes || 0}</p>
               </div>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{(summary.totalDuration / 1000).toFixed(1)}s</p>
+              <div className="stat-card">
+                <div className="flex items-center gap-2 mb-1">
+                  <Clock className="w-4 h-4 text-slate-400" />
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Durasi</p>
+                </div>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{(summary.totalDuration / 1000).toFixed(1)}s</p>
+              </div>
             </div>
           </div>
         </div>
@@ -204,6 +207,7 @@ function TestResults({ run, onDownloadReport, onDownloadPdf, onNewTest, onBack }
           { id: 'passed', label: 'Lulus' },
           { id: 'failed', label: 'Gagal' },
           { id: 'note', label: 'Catatan' },
+          { id: 'skipped', label: 'Skip' },
         ].map(f => (
           <button
             key={f.id}
@@ -219,14 +223,15 @@ function TestResults({ run, onDownloadReport, onDownloadPdf, onNewTest, onBack }
 
       {/* Module groups */}
       <div className="space-y-4">
-        {Object.entries(moduleGroups).map(([mod, items]) => {
+        {Object.entries(moduleGroups).map(([mod, items], modIdx) => {
           const modStats = summary.modules[mod];
           const isExpanded = expandedModules[mod] !== false;
           const filtered = filteredResults(items);
           if (filtered.length === 0) return null;
 
           return (
-            <div key={mod} className="glass-card overflow-hidden animate-slide-up">
+            <div key={mod} className="animate-slide-up">
+              <div className="glass-card overflow-hidden">
               <button
                 onClick={() => toggleModule(mod)}
                 className="w-full flex items-center justify-between p-3 sm:p-4 hover:bg-slate-50/40 dark:hover:bg-slate-800/40 transition-colors gap-2"
@@ -238,6 +243,7 @@ function TestResults({ run, onDownloadReport, onDownloadPdf, onNewTest, onBack }
                      <span className="badge badge-pass">{modStats.passed} lulus</span>
                      {modStats.failed > 0 && <span className="badge badge-fail">{modStats.failed} gagal</span>}
                      {modStats.notes > 0 && <span className="badge badge-note">{modStats.notes} catatan</span>}
+                     {modStats.skipped > 0 && <span className="badge badge-skip">{modStats.skipped} skip</span>}
                    </div>
                 </div>
                 <span className="text-sm text-slate-400 flex-shrink-0">{modStats.total} tes</span>
@@ -297,6 +303,7 @@ function TestResults({ run, onDownloadReport, onDownloadPdf, onNewTest, onBack }
                   })}
                 </div>
               )}
+            </div>
             </div>
           );
         })}

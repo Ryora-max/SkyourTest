@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { GitCompare, X, CheckCircle2, XCircle, ArrowRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 const MODUL_NAMES = {
-  accessibility: 'Aksesibilitas', login: 'Login', navigation: 'Navigasi',
-  security: 'Keamanan', performance: 'Performa', responsive: 'Responsif',
-  form_validation: 'Validasi Form', menu_traversal: 'Menu Traversal',
-  api_response: 'API Response', cookie_session: 'Cookie & Session', content_seo: 'Content & SEO',
+    login: 'Login & Auth', dashboard: 'Dashboard Layout', navigation: 'Navigation & Menu',
+  structure: 'Structure & Layout', security: 'Security & Hack', form_validation: 'Form & Input',
+  responsive: 'Responsive & Mobile', performance: 'Performance & Network',
+  crud: 'CRUD & Interaction', api_data: 'API & Data',
 };
 
 function CompareRuns({ runs, onBack }) {

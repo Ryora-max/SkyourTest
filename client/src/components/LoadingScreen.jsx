@@ -9,7 +9,7 @@ export default function LoadingScreen() {
 
       {/* Logo with pulse */}
       <div className="relative mb-8 animate-logo-entrance">
-        <div className="absolute inset-0 bg-blue-500/30 rounded-2xl blur-xl animate-glow-pulse" />
+        <div className="absolute inset-0 bg-blue-500/30 rounded-2xl blur-xl animate-pulse" />
         <div className="relative">
           <Logo size="xl" className="animate-logo-pulse" />
         </div>

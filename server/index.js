@@ -34,6 +34,14 @@ function loadRuns() {
     if (fs.existsSync(DATA_FILE)) {
       const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
       for (const run of data) {
+        // Auto-cleanup zombie runs from crashed server
+        if (run.status === 'running') {
+          run.status = 'error';
+          run.endTime = new Date().toISOString();
+          run.currentTest = 'Server crashed during test';
+          run.error = 'Server restarted while test was running';
+          console.log(`  Auto-cleaned zombie run: ${run.id}`);
+        }
         runs.set(run.id, run);
       }
       console.log(`  Loaded ${runs.size} runs from disk`);
@@ -333,13 +341,10 @@ app.get('/api/info', (req, res) => {
       listRuns: 'GET /api/runs',
     },
     modules: [
-      'dashboard', 'accessibility', 'login', 'navigation', 'security', 'performance',
-      'responsive', 'form_validation', 'menu_traversal',
-      'api_response', 'cookie_session', 'content_seo',
-      'crud', 'payment', 'camera',
-      'multi_role', 'file_upload', 'email_notif', 'booking',
+      'login', 'dashboard', 'navigation', 'structure', 'security', 'form_validation',
+      'responsive', 'performance', 'crud', 'api_data',
     ],
-    testModes: ['login_dashboard', 'direct_dashboard', 'login_only', 'dashboard_with_login'],
+    testModes: ['login_dashboard', 'direct_dashboard'],
   });
 });
 
@@ -367,10 +372,16 @@ function broadcastWs(message) {
 global.broadcastWs = broadcastWs;
 
 function broadcastFrame(runId, frameData) {
-  const msg = JSON.stringify({ type: 'frame', data: frameData, runId });
+  // Binary protocol: 1 byte type (0x01=frame) + runId length + runId + raw JPEG
+  const runIdBuf = Buffer.from(runId, 'utf8');
+  const header = Buffer.alloc(2);
+  header[0] = 0x01; // frame type
+  header[1] = runIdBuf.length;
+  const msg = Buffer.concat([header, runIdBuf, frameData]);
   for (const ws of wsClients) {
     if (ws.readyState === 1 && ws.runId === runId) {
-      ws.send(msg);
+      if (ws.bufferedAmount > 512 * 1024) continue;
+      ws.send(msg, { binary: true });
     }
   }
 }
@@ -379,6 +390,7 @@ global.broadcastFrame = broadcastFrame;
 
 wss.on('connection', (ws, req) => {
   wsClients.add(ws);
+  ws.binaryType = 'arraybuffer';
   console.log(`  WebSocket client connected (total: ${wsClients.size})`);
 
   ws.on('message', (msg) => {
