@@ -264,10 +264,6 @@ class TestRunner {
       if (this.cancelled) {
         this.broadcastStep('CANCEL', '', 'Tes dibatalkan', 'done', '');
         this.broadcastDone();
-        await this.stopScreencast(page);
-        await browser.close();
-        this.browser = null;
-        this.page = null;
         return results;
       }
 
@@ -450,6 +446,13 @@ class TestRunner {
         runConfig.currentTest = `${rolePrefix} Logout...`;
         await this.logout(page, authState).catch(() => {});
       }
+    }
+
+    // Check if cancelled during loops
+    if (this.cancelled) {
+      this.broadcastStep('CANCEL', '', 'Tes dibatalkan', 'done', '');
+      this.broadcastDone();
+      return results;
     }
 
     // Console & network error summary
@@ -725,7 +728,7 @@ class TestRunner {
 
     // TC-L-010: Back button security
     if (authState.isAuthenticated) {
-      R.push(await this.noteTest('TC-L-010', M, 'Back button security setelah logout',
+      R.push(await this.safeTest('TC-L-010', M, 'Back button security setelah logout',
         'User login', '1. Login\n2. Logout\n3. Back button\n4. Cek tidak bisa akses dashboard',
         'Tidak bisa akses dashboard setelah logout', async () => {
           // Logout first
@@ -3324,6 +3327,7 @@ class TestRunner {
         await page.waitForTimeout(800);
         const fwdUrl = page.url();
         if (backUrl === fwdUrl) throw new Error('Back/forward tidak berubah halaman');
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
         return 'Back/forward navigation berfungsi';
       }));
 

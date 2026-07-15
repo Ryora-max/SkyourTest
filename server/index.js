@@ -216,7 +216,14 @@ app.post('/api/runs', rateLimitMiddleware(1, 10000), async (req, res) => {
   saveRunsNow();
 
   testRunner.run(run).then((results) => {
-    if (run.status === 'cancelled') return;
+    if (run.status === 'cancelled') {
+      run.results = results || [];
+      run.summary = testRunner.generateSummary(results || []);
+      run.endTime = new Date().toISOString();
+      runs.set(runId, run);
+      saveRunsNow();
+      return;
+    }
     run.results = results;
     run.summary = testRunner.generateSummary(results);
     run.status = 'completed';
@@ -347,7 +354,14 @@ app.post('/api/webhook/trigger', requireApiKey, async (req, res) => {
   saveRunsNow();
 
   testRunner.run(run).then(async (results) => {
-    if (run.status === 'cancelled') return;
+    if (run.status === 'cancelled') {
+      run.results = results || [];
+      run.summary = testRunner.generateSummary(results || []);
+      run.endTime = new Date().toISOString();
+      runs.set(runId, run);
+      saveRunsNow();
+      return;
+    }
     run.results = results;
     run.summary = testRunner.generateSummary(results);
     run.status = 'completed';
