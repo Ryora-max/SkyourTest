@@ -27,6 +27,7 @@ function TestConfigForm({ onStart, disabled = false }) {
   const [browser] = useState('chromium');
   const [testMode, setTestMode] = useState('login_dashboard');
   const [selectedModules, setSelectedModules] = useState(['all']);
+  const [isStarting, setIsStarting] = useState(false);
 
   const toggleModule = (id) => {
     if (id === 'all') {
@@ -46,9 +47,14 @@ function TestConfigForm({ onStart, disabled = false }) {
   const canProceedStep1 = url.trim().length > 0;
   const canProceedStep2 = selectedModules.length > 0;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!url) return;
-    onStart({ url, username, password, browser, testMode, testModules: selectedModules });
+    setIsStarting(true);
+    try {
+      await onStart({ url, username, password, browser, testMode, testModules: selectedModules });
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   const stepLabels = ['Konfigurasi', 'Pilih Modul', 'Review & Mulai'];
@@ -347,11 +353,11 @@ function TestConfigForm({ onStart, disabled = false }) {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={disabled}
-              className={`btn-primary gap-2 text-base px-6 sm:px-8 py-3 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={disabled || isStarting}
+              className={`btn-primary gap-2 text-base px-6 sm:px-8 py-3 ${disabled || isStarting ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              {disabled ? (
-                <><Loader2 className="w-5 h-5 animate-spin" /> Tes Berjalan...</>
+              {disabled || isStarting ? (
+                <><Loader2 className="w-5 h-5 animate-spin" /> Memulai...</>
               ) : (
                 <><Rocket className="w-5 h-5" /> Mulai Tes</>
               )}

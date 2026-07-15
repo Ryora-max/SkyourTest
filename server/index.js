@@ -29,6 +29,54 @@ const pdfGenerator = new PdfGenerator();
 
 const runs = new Map();
 
+// ===== Rate Limiting =====
+const rateLimitMap = new Map();
+function rateLimit(key, maxRequests, windowMs) {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key) || { count: 0, resetAt: now + windowMs };
+  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + windowMs; }
+  entry.count++;
+  rateLimitMap.set(key, entry);
+  return entry.count <= maxRequests;
+}
+
+function rateLimitMiddleware(maxRequests, windowMs) {
+  return (req, res, next) => {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    if (!rateLimit(ip, maxRequests, windowMs)) {
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
+    next();
+  };
+}
+
+// Apply general rate limiting to all API routes
+app.use('/api/', rateLimitMiddleware(100, 60000));
+
+// ===== Debounced Save =====
+let saveTimer = null;
+function saveRuns() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    try {
+      const data = Array.from(runs.values());
+      fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    } catch (err) {
+      console.error('  Failed to save runs:', err.message);
+    }
+  }, 3000);
+}
+function saveRunsNow() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  try {
+    const data = Array.from(runs.values());
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error('  Failed to save runs:', err.message);
+  }
+}
+
 function loadRuns() {
   try {
     if (fs.existsSync(DATA_FILE)) {
@@ -51,16 +99,31 @@ function loadRuns() {
   }
 }
 
-function saveRuns() {
+loadRuns();
+
+// ===== Cleanup old report files on startup =====
+const REPORTS_DIR = path.join(__dirname, '..', 'reports');
+function cleanupOldReports() {
   try {
-    const data = Array.from(runs.values());
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    if (!fs.existsSync(REPORTS_DIR)) return;
+    const files = fs.readdirSync(REPORTS_DIR);
+    const now = Date.now();
+    const MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
+    let cleaned = 0;
+    for (const file of files) {
+      const filePath = path.join(REPORTS_DIR, file);
+      const stat = fs.statSync(filePath);
+      if (now - stat.mtimeMs > MAX_AGE) {
+        fs.unlinkSync(filePath);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) console.log(`  Cleaned ${cleaned} old report files`);
   } catch (err) {
-    console.error('  Failed to save runs:', err.message);
+    console.error('  Report cleanup failed:', err.message);
   }
 }
-
-loadRuns();
+cleanupOldReports();
 
 function requireApiKey(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -113,7 +176,7 @@ app.get('/api/active-run', (req, res) => {
   }
 });
 
-app.post('/api/runs', async (req, res) => {
+app.post('/api/runs', rateLimitMiddleware(1, 10000), async (req, res) => {
   const { url, username, password, browser, testModules, testMode } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
@@ -147,7 +210,7 @@ app.post('/api/runs', async (req, res) => {
   };
 
   runs.set(runId, run);
-  saveRuns();
+  saveRunsNow();
 
   testRunner.run(run).then((results) => {
     if (run.status === 'cancelled') return;
@@ -158,13 +221,13 @@ app.post('/api/runs', async (req, res) => {
     run.currentTest = 'Selesai';
     run.endTime = new Date().toISOString();
     runs.set(runId, run);
-    saveRuns();
+    saveRunsNow();
   }).catch((err) => {
     run.status = 'error';
     run.error = err.message;
     run.endTime = new Date().toISOString();
     runs.set(runId, run);
-    saveRuns();
+    saveRunsNow();
   });
 
   res.json(run);
@@ -214,7 +277,7 @@ app.get('/api/runs/:id/report/pdf', async (req, res) => {
 
 app.delete('/api/runs/:id', (req, res) => {
   runs.delete(req.params.id);
-  saveRuns();
+  saveRunsNow();
   res.json({ success: true });
 });
 
@@ -234,7 +297,7 @@ app.post('/api/runs/:id/cancel', (req, res) => {
   run.currentTest = 'Dibatalkan';
   run.progress = run.progress || 0;
   runs.set(run.id, run);
-  saveRuns();
+  saveRunsNow();
   res.json({ success: true, runId: run.id, status: 'cancelled' });
 });
 
@@ -274,7 +337,7 @@ app.post('/api/webhook/trigger', requireApiKey, async (req, res) => {
   };
 
   runs.set(runId, run);
-  saveRuns();
+  saveRunsNow();
 
   testRunner.run(run).then(async (results) => {
     if (run.status === 'cancelled') return;
@@ -283,7 +346,7 @@ app.post('/api/webhook/trigger', requireApiKey, async (req, res) => {
     run.status = 'completed';
     run.endTime = new Date().toISOString();
     runs.set(runId, run);
-    saveRuns();
+    saveRunsNow();
 
     if (webhookCallback) {
       try {
@@ -315,7 +378,7 @@ app.post('/api/webhook/trigger', requireApiKey, async (req, res) => {
     run.error = err.message;
     run.endTime = new Date().toISOString();
     runs.set(runId, run);
-    saveRuns();
+    saveRunsNow();
   });
 
   res.json({
@@ -324,6 +387,16 @@ app.post('/api/webhook/trigger', requireApiKey, async (req, res) => {
     message: 'Test started via webhook. Poll /api/runs/{runId}/status for updates.',
     pollUrl: `http://localhost:${PORT}/api/runs/${runId}/status`,
     reportUrl: `http://localhost:${PORT}/api/runs/${runId}/report`,
+  });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    runs: runs.size,
+    activeRun: getActiveRun() ? true : false,
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -391,7 +464,10 @@ global.broadcastFrame = broadcastFrame;
 wss.on('connection', (ws, req) => {
   wsClients.add(ws);
   ws.binaryType = 'arraybuffer';
+  ws.isAlive = true;
   console.log(`  WebSocket client connected (total: ${wsClients.size})`);
+
+  ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', (msg) => {
     try {
@@ -410,6 +486,23 @@ wss.on('connection', (ws, req) => {
   ws.on('error', () => {
     wsClients.delete(ws);
   });
+});
+
+// WebSocket ping/pong heartbeat — terminate stale connections
+const wsHeartbeat = setInterval(() => {
+  for (const ws of wsClients) {
+    if (!ws.isAlive) {
+      ws.terminate();
+      wsClients.delete(ws);
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping().catch(() => {});
+  }
+}, 30000);
+
+server.on('close', () => {
+  clearInterval(wsHeartbeat);
 });
 
 server.listen(PORT, () => {

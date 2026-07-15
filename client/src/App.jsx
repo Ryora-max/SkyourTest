@@ -11,12 +11,14 @@ import LandingPage from './components/LandingPage';
 import LoadingScreen from './components/LoadingScreen';
 import LearnLogin from './components/LearnLogin';
 import LearnPage from './components/LearnPage';
+import { ToastProvider, useToast } from './components/ToastContext';
 
 const API_BASE = '';
 
 const RUN_CACHE_KEY = 'skyo_current_run';
 
-function App() {
+function AppContent() {
+  const { toast } = useToast();
   const [view, setView] = useState('landing');
   const [currentRun, setCurrentRun] = useState(() => {
     try {
@@ -170,7 +172,7 @@ function App() {
       });
       if (res.status === 409) {
         const errData = await res.json();
-        alert(errData.error || 'Tes sedang berjalan. Tunggu tes selesai.');
+        toast(errData.error || 'Tes sedang berjalan. Tunggu tes selesai.', 'error');
         return;
       }
       const run = await res.json();
@@ -228,7 +230,7 @@ function App() {
       pollIntervalRef.current = interval;
     } catch (err) {
       console.error('Gagal memulai tes:', err);
-      alert('Gagal memulai tes. Pastikan server berjalan!');
+      toast('Gagal memulai tes. Pastikan server berjalan!', 'error');
     }
   };
 
@@ -373,6 +375,14 @@ function App() {
       </main>
       {showLearnLogin && <LearnLogin onAuth={handleLearnAuth} onClose={() => setShowLearnLogin(false)} />}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   );
 }
 

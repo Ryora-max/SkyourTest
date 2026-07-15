@@ -205,6 +205,7 @@ export default function LiveTestPage({ run, onExit, onViewResults, onCancel, dar
   const [localProgress, setLocalProgress] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [completedModules, setCompletedModules] = useState({});
+  const [frameSize, setFrameSize] = useState({ w: 1920, h: 1080 });
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const stepsRef = useRef(null);
@@ -219,6 +220,19 @@ export default function LiveTestPage({ run, onExit, onViewResults, onCancel, dar
       setDone(true);
     }
   }, [run?.status]);
+
+  useEffect(() => {
+    if (done) return;
+    const handleKey = (e) => {
+      if (e.key === 'Escape' && onCancel && run?.status === 'running') {
+        if (window.confirm('Batalkan tes yang sedang berjalan?')) {
+          onCancel();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [done, onCancel, run?.status]);
 
   const progress = Math.max(localProgress, run?.progress || 0);
   const results = run?.results || [];
@@ -280,6 +294,11 @@ export default function LiveTestPage({ run, onExit, onViewResults, onCancel, dar
                   createImageBitmap(new Blob([jpegData], { type: 'image/jpeg' })).then(bmp => {
                     const canvas = canvasRef.current;
                     if (canvas) {
+                      if (canvas.width !== bmp.width || canvas.height !== bmp.height) {
+                        canvas.width = bmp.width;
+                        canvas.height = bmp.height;
+                        setFrameSize({ w: bmp.width, h: bmp.height });
+                      }
                       const ctx = canvas.getContext('2d');
                       ctx.imageSmoothingEnabled = true;
                       ctx.imageSmoothingQuality = 'high';
@@ -462,15 +481,15 @@ export default function LiveTestPage({ run, onExit, onViewResults, onCancel, dar
               <div className="relative w-full h-full flex items-center justify-center">
                 <canvas
                   ref={canvasRef}
-                  width={1920}
-                  height={1080}
+                  width={frameSize.w}
+                  height={frameSize.h}
                   className="rounded-lg shadow-2xl"
                   style={{
                     maxWidth: '100%',
                     maxHeight: '100%',
                     width: 'auto',
                     height: 'auto',
-                    aspectRatio: '16 / 9',
+                    aspectRatio: `${frameSize.w} / ${frameSize.h}`,
                     objectFit: 'contain',
                   }}
                 />

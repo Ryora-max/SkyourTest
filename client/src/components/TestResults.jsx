@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Plus, CheckCircle2, XCircle, Clock, Globe, Chrome, Globe2, Monitor, ChevronDown, ChevronRight, FileText, AlertCircle, ArrowLeft } from 'lucide-react';
+import { Download, Plus, CheckCircle2, XCircle, Clock, Globe, Chrome, Globe2, Monitor, ChevronDown, ChevronRight, FileText, AlertCircle, ArrowLeft, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 
 const BROWSER_ICONS = { chromium: Chrome, firefox: Globe2, webkit: Monitor };
 const STATUS_ICONS = { passed: CheckCircle2, failed: XCircle, note: AlertCircle, skipped: ChevronDown };
@@ -111,6 +111,17 @@ function TestResults({ run, onDownloadReport, onDownloadPdf, onNewTest, onBack }
     setExpandedModules(prev => ({ ...prev, [mod]: !prev[mod] }));
   };
 
+  const allExpanded = Object.keys(moduleGroups).every(mod => expandedModules[mod] !== false);
+  const toggleAllModules = () => {
+    if (allExpanded) {
+      const collapsed = {};
+      Object.keys(moduleGroups).forEach(mod => { collapsed[mod] = false; });
+      setExpandedModules(collapsed);
+    } else {
+      setExpandedModules({});
+    }
+  };
+
   const filteredResults = (items) => {
     if (filter === 'all') return items;
     return items.filter(r => r.status === filter);
@@ -200,8 +211,8 @@ function TestResults({ run, onDownloadReport, onDownloadPdf, onNewTest, onBack }
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2 mb-4 animate-slide-up flex-wrap">
+      {/* Filters + Collapse/Expand */}
+      <div className="flex gap-2 mb-4 animate-slide-up flex-wrap items-center">
         {[
           { id: 'all', label: 'Semua' },
           { id: 'passed', label: 'Lulus' },
@@ -219,6 +230,13 @@ function TestResults({ run, onDownloadReport, onDownloadPdf, onNewTest, onBack }
             {f.label}
           </button>
         ))}
+        <div className="flex-1" />
+        <button
+          onClick={toggleAllModules}
+          className="px-3 py-2 rounded-xl text-xs font-medium glass text-slate-600 dark:text-slate-300 hover:scale-105 transition-all flex items-center gap-1.5"
+        >
+          {allExpanded ? <><ChevronsDownUp className="w-3.5 h-3.5" /> Collapse All</> : <><ChevronsUpDown className="w-3.5 h-3.5" /> Expand All</>}
+        </button>
       </div>
 
       {/* Module groups */}

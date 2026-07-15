@@ -50,13 +50,14 @@ class TestRunner {
     }
   }
 
-  async startScreencast(page) {
+  async startScreencast(page, width = 1920, height = 1080) {
     try {
       this._lastFrameTime = 0;
       this._framePending = false;
+      this._screencastSize = { width, height };
       await page.screencast.start({
-        size: { width: 1920, height: 1080 },
-        quality: 92,
+        size: { width, height },
+        quality: 95,
         onFrame: ({ data }) => {
           const now = Date.now();
           if (this._framePending) return;
@@ -72,6 +73,31 @@ class TestRunner {
     } catch (e) {
       console.error('  Screencast start failed:', e.message);
     }
+  }
+
+  async updateScreencastSize(page, width, height) {
+    try {
+      await page.screencast.stop();
+    } catch {}
+    await this.startScreencast(page, width, height);
+  }
+
+  async setMobileViewport(page, w = 393, h = 852) {
+    await page.setViewportSize({ width: w, height: h });
+    await this.updateScreencastSize(page, Math.max(w, 393), Math.max(h, 600));
+    await page.waitForTimeout(500);
+  }
+
+  async setTabletViewport(page, w = 834, h = 1194) {
+    await page.setViewportSize({ width: w, height: h });
+    await this.updateScreencastSize(page, w, h);
+    await page.waitForTimeout(500);
+  }
+
+  async setDesktopViewport(page) {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await this.updateScreencastSize(page, 1920, 1080);
+    await page.waitForTimeout(300);
   }
 
   async stopScreencast(page) {
@@ -98,7 +124,7 @@ class TestRunner {
         ignoreHTTPSErrors: true,
         locale: 'id-ID',
         timezoneId: 'Asia/Jakarta',
-        deviceScaleFactor: 1,
+        deviceScaleFactor: 2,
       });
       page = await context.newPage();
       this.page = page;
@@ -1218,9 +1244,16 @@ class TestRunner {
           // Re-login to restore session for subsequent tests
           if (username && password) {
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+            await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
             await this.fillLoginForm(page, username, password);
             await page.waitForTimeout(3000);
-            authState.isAuthenticated = !page.url().includes('sign_in') && !page.url().includes('login');
+            await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+            const afterLoginUrl = page.url();
+            authState.isAuthenticated = !afterLoginUrl.includes('sign_in') && !afterLoginUrl.includes('login');
+            if (authState.isAuthenticated && authState.dashboardUrl) {
+              await page.goto(authState.dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+              await page.waitForTimeout(1000);
+            }
           }
           return 'Back button security OK';
         }));
@@ -1383,10 +1416,17 @@ class TestRunner {
     R.push(await this.safeTest('TC-D-008', M, 'Footer tersedia',
       'Dashboard dimuat', '1. Scroll ke bawah\n2. Cari footer element',
       'Footer ditemukan', async () => {
-        // Scroll to bottom to trigger lazy-loaded footers
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+        // Scroll to bottom using multiple strategies (body, documentElement, keyboard, scrollable containers)
+        await page.evaluate(() => {
+          window.scrollTo(0, document.body.scrollHeight);
+          document.documentElement.scrollTop = 999999;
+          const scrollables = document.querySelectorAll('[class*="scroll"], [class*="content"], main, [role="main"]');
+          for (const el of scrollables) { if (el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight; }
+        }).catch(() => {});
         await page.waitForTimeout(500);
-        const footerSels = ['footer', '[class*="footer"]', '[role="contentinfo"]', '[class*="bottom-bar"]', '[data-testid*="footer"]', '[class*="copyright"]'];
+        await page.keyboard.press('End').catch(() => {});
+        await page.waitForTimeout(300);
+        const footerSels = ['footer', '[class*="footer"]', '[role="contentinfo"]', '[class*="bottom-bar"]', '[data-testid*="footer"]', '[class*="copyright"]', '.layout-footer', '.footer-container', '#footer'];
         let found = false;
         for (const s of footerSels) {
           if (await page.locator(s).count() > 0) { found = true; break; }
@@ -1462,12 +1502,11 @@ class TestRunner {
           if (await el.isVisible().catch(() => false)) { hamburger = el; break; }
         }
         if (!hamburger) return 'Hamburger menu tidak ditemukan (info)';
-        await page.setViewportSize({ width: 375, height: 667 });
-        await page.waitForTimeout(500);
+        await this.setMobileViewport(page, 393, 852);
         await hamburger.click().catch(() => {});
         await page.waitForTimeout(500);
         const menuVisible = await page.locator('nav:visible, [class*="sidebar"]:visible, [class*="menu"]:visible, [class*="drawer"]:visible').first().isVisible().catch(() => false);
-        await page.setViewportSize({ width: 1920, height: 1080 });
+        await this.setDesktopViewport(page);
         if (!menuVisible) throw new Error('Hamburger menu tidak terbuka setelah klik');
         return 'Hamburger menu berfungsi — menu terbuka di mobile';
       }));
@@ -1476,10 +1515,17 @@ class TestRunner {
     R.push(await this.safeTest('TC-N-004', M, 'Footer links terdeteksi',
       'Halaman dimuat', '1. Scroll ke bawah\n2. Cari footer\n3. Cek links di footer',
       'Footer dengan links ditemukan', async () => {
-        // Scroll to bottom to trigger lazy-loaded footers
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight)).catch(() => {});
+        // Scroll to bottom using multiple strategies (body, documentElement, keyboard, scrollable containers)
+        await page.evaluate(() => {
+          window.scrollTo(0, document.body.scrollHeight);
+          document.documentElement.scrollTop = 999999;
+          const scrollables = document.querySelectorAll('[class*="scroll"], [class*="content"], main, [role="main"]');
+          for (const el of scrollables) { if (el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight; }
+        }).catch(() => {});
         await page.waitForTimeout(500);
-        const footerSels = ['footer', '[class*="footer"]', '[role="contentinfo"]', '[class*="bottom-bar"]', '[data-testid*="footer"]', '[class*="copyright"]'];
+        await page.keyboard.press('End').catch(() => {});
+        await page.waitForTimeout(300);
+        const footerSels = ['footer', '[class*="footer"]', '[role="contentinfo"]', '[class*="bottom-bar"]', '[data-testid*="footer"]', '[class*="copyright"]', '.layout-footer', '.footer-container', '#footer'];
         let footerFound = false;
         for (const s of footerSels) {
           if (await page.locator(s).count() > 0) { footerFound = true; break; }
@@ -2006,6 +2052,9 @@ class TestRunner {
   async testFormValidation(page, url, d) {
     const M = 'Form & Input'; const R = [];
 
+    // Re-detect inputs after page hydration (inputs may load after JS)
+    d.inputCount = await page.locator('input:not([type="hidden"])').count();
+    d.hasForm = d.inputCount > 0 || await page.locator('form').count() > 0;
     if (!d.hasForm) {
       for (let i = 1; i <= 10; i++) {
         R.push(this.skip(`TC-FV-${String(i).padStart(3, '0')}`, M, `Form test ${i}`, 'Form', 'N/A', 'N/A', 'no form detected'));
@@ -2043,8 +2092,8 @@ class TestRunner {
         return 'Email invalid ditolak oleh browser validation';
       }));
 
-    // TC-FV-003: Maxlength attribute
-    R.push(await this.safeTest('TC-FV-003', M, 'Maxlength attribute pada text input',
+    // TC-FV-003: Maxlength attribute (optional — not all pages need maxlength)
+    R.push(await this.noteTest('TC-FV-003', M, 'Maxlength attribute pada text input',
       'Form dengan text input', '1. Cari input dengan maxlength\n2. Cek ada batasan',
       'Maxlength ditemukan pada minimal 1 input', async () => {
         const inputs = await page.locator('input[type="text"]:visible, input:not([type]):visible, textarea:visible').all();
@@ -2053,7 +2102,7 @@ class TestRunner {
           const ml = await input.getAttribute('maxlength').catch(() => null);
           if (ml) { hasMaxlength = true; break; }
         }
-        if (!hasMaxlength) throw new Error('Tidak ada input dengan maxlength');
+        if (!hasMaxlength) throw new Error('Tidak ada input dengan maxlength (best practice)');
         return 'Maxlength attribute ditemukan';
       }));
 
@@ -2200,35 +2249,32 @@ class TestRunner {
   async testResponsive(page, url, d) {
     const M = 'Responsive & Mobile'; const R = [];
 
-    // TC-R-001: Mobile viewport (iPhone SE 375x667)
-    R.push(await this.safeTest('TC-R-001', M, 'Tampil benar di Mobile (iPhone SE 375x667)',
-      'Halaman dimuat', '1. Set viewport 375x667\n2. Cek layout tidak broken',
+    // TC-R-001: Mobile viewport (iPhone 14/15 Pro 393x852)
+    R.push(await this.safeTest('TC-R-001', M, 'Tampil benar di Mobile (iPhone 14/15 Pro 393x852)',
+      'Halaman dimuat', '1. Set viewport 393x852\n2. Cek layout tidak broken',
       'Layout OK di mobile', async () => {
-        await page.setViewportSize({ width: 375, height: 667 });
-        await page.waitForTimeout(500);
+        await this.setMobileViewport(page, 393, 852);
         const hasHScroll = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5);
         if (hasHScroll) throw new Error('Horizontal scroll di mobile — layout broken');
         const responsiveImgs = await page.evaluate(() => document.querySelectorAll('img[srcset], picture source').length).catch(() => 0);
-        return `Layout OK di mobile (375x667)${responsiveImgs > 0 ? ` + ${responsiveImgs} responsive images` : ''}`;
+        return `Layout OK di mobile (393x852)${responsiveImgs > 0 ? ` + ${responsiveImgs} responsive images` : ''}`;
       }));
 
-    // TC-R-002: Tablet viewport (iPad 768x1024)
-    R.push(await this.safeTest('TC-R-002', M, 'Tampil benar di Tablet (iPad 768x1024)',
-      'Halaman dimuat', '1. Set viewport 768x1024\n2. Cek layout tidak broken',
+    // TC-R-002: Tablet viewport (iPad Pro 11" 834x1194)
+    R.push(await this.safeTest('TC-R-002', M, 'Tampil benar di Tablet (iPad Pro 11" 834x1194)',
+      'Halaman dimuat', '1. Set viewport 834x1194\n2. Cek layout tidak broken',
       'Layout OK di tablet', async () => {
-        await page.setViewportSize({ width: 768, height: 1024 });
-        await page.waitForTimeout(500);
+        await this.setTabletViewport(page, 834, 1194);
         const hasHScroll = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5);
         if (hasHScroll) throw new Error('Horizontal scroll di tablet — layout broken');
-        return 'Layout OK di tablet (768x1024)';
+        return 'Layout OK di tablet (834x1194)';
       }));
 
     // TC-R-003: Desktop viewport (1920x1080)
     R.push(await this.safeTest('TC-R-003', M, 'Tampil benar di Desktop (1920x1080)',
       'Halaman dimuat', '1. Set viewport 1920x1080\n2. Cek layout tidak broken',
       'Layout OK di desktop', async () => {
-        await page.setViewportSize({ width: 1920, height: 1080 });
-        await page.waitForTimeout(500);
+        await this.setDesktopViewport(page);
         const hasHScroll = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5);
         if (hasHScroll) throw new Error('Horizontal scroll di desktop — layout broken');
         return 'Layout OK di desktop (1920x1080)';
@@ -2236,13 +2282,12 @@ class TestRunner {
 
     // TC-R-004: Landscape orientation tidak break layout
     R.push(await this.safeTest('TC-R-004', M, 'Landscape orientation tidak break layout',
-      'Halaman dimuat di mobile', '1. Set mobile landscape (667x375)\n2. Cek layout',
+      'Halaman dimuat di mobile', '1. Set mobile landscape (852x393)\n2. Cek layout',
       'Layout OK di landscape', async () => {
-        await page.setViewportSize({ width: 667, height: 375 });
-        await page.waitForTimeout(500);
+        await this.setMobileViewport(page, 852, 393);
         const hasHScroll = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 5);
         if (hasHScroll) throw new Error('Horizontal scroll di landscape — layout broken');
-        await page.setViewportSize({ width: 1920, height: 1080 });
+        await this.setDesktopViewport(page);
         return 'Layout OK di landscape mobile';
       }));
 
@@ -2250,8 +2295,7 @@ class TestRunner {
     R.push(await this.safeTest('TC-R-005', M, 'Hamburger menu berfungsi di mobile (jika ada)',
       'Halaman dimuat di mobile', '1. Set mobile viewport\n2. Cari hamburger\n3. Klik\n4. Cek menu terbuka',
       'Hamburger menu berfungsi', async () => {
-        await page.setViewportSize({ width: 375, height: 667 });
-        await page.waitForTimeout(1000);
+        await this.setMobileViewport(page, 393, 852);
         const hamburgerSels = ['[class*="hamburger"]', '[class*="menu-toggle"]', '[aria-label*="menu" i]', 'button[class*="toggle"]'];
         let hamburger = null;
         for (const s of hamburgerSels) {
@@ -2259,13 +2303,13 @@ class TestRunner {
           if (await el.isVisible().catch(() => false)) { hamburger = el; break; }
         }
         if (!hamburger) {
-          await page.setViewportSize({ width: 1920, height: 1080 });
+          await this.setDesktopViewport(page);
           return 'Hamburger menu tidak ditemukan (info)';
         }
         await hamburger.click().catch(() => {});
         await page.waitForTimeout(500);
         const menuVisible = await page.locator('nav:visible, [class*="sidebar"]:visible, [class*="menu"]:visible, [class*="drawer"]:visible').first().isVisible().catch(() => false);
-        await page.setViewportSize({ width: 1920, height: 1080 });
+        await this.setDesktopViewport(page);
         if (!menuVisible) throw new Error('Hamburger menu tidak terbuka');
         return 'Hamburger menu berfungsi di mobile';
       }));
@@ -2274,8 +2318,7 @@ class TestRunner {
     R.push(await this.safeTest('TC-R-006', M, 'Touch target min 24px untuk interactive elements',
       'Halaman dimuat di mobile', '1. Set mobile viewport\n2. Cek button/link size',
       'Touch targets >= 24px', async () => {
-        await page.setViewportSize({ width: 375, height: 667 });
-        await page.waitForTimeout(1000);
+        await this.setMobileViewport(page, 393, 852);
         const smallTargets = await page.evaluate(() => {
           const els = document.querySelectorAll('button, a, [role="button"], input[type="submit"], input[type="button"]');
           let small = 0, total = 0;
@@ -2288,7 +2331,7 @@ class TestRunner {
           }
           return { small, total };
         });
-        await page.setViewportSize({ width: 1920, height: 1080 });
+        await this.setDesktopViewport(page);
         if (smallTargets.total > 0 && smallTargets.small > smallTargets.total * 0.5) {
           throw new Error(`${smallTargets.small}/${smallTargets.total} touch targets < 24px`);
         }
@@ -2299,8 +2342,7 @@ class TestRunner {
     R.push(await this.safeTest('TC-R-007', M, 'Text readability di mobile (min 10px font size)',
       'Halaman dimuat di mobile', '1. Set mobile viewport\n2. Cek font-size elemen teks',
       'Font size >= 10px di mobile', async () => {
-        await page.setViewportSize({ width: 375, height: 667 });
-        await page.waitForTimeout(1000);
+        await this.setMobileViewport(page, 393, 852);
         const smallText = await page.evaluate(() => {
           const els = document.querySelectorAll('p, span, a, td, th, li, label, button');
           let small = 0, total = 0;
@@ -2313,7 +2355,7 @@ class TestRunner {
           }
           return { small, total };
         });
-        await page.setViewportSize({ width: 1920, height: 1080 });
+        await this.setDesktopViewport(page);
         if (smallText.small > 0) throw new Error(`${smallText.small}/${smallText.total} elemen dengan font < 10px`);
         return `Semua ${smallText.total} elemen teks >= 10px`;
       }));
@@ -2322,8 +2364,7 @@ class TestRunner {
     R.push(await this.safeTest('TC-R-008', M, 'No text overflow di mobile',
       'Halaman dimuat di mobile', '1. Set mobile viewport\n2. Cek text overflow',
       'Tidak ada text overflow', async () => {
-        await page.setViewportSize({ width: 375, height: 667 });
-        await page.waitForTimeout(1000);
+        await this.setMobileViewport(page, 393, 852);
         const overflow = await page.evaluate(() => {
           const els = document.querySelectorAll('h1, h2, h3, p, span, td, th, label, button, a');
           let overflowCount = 0;
@@ -2332,7 +2373,7 @@ class TestRunner {
           }
           return overflowCount;
         });
-        await page.setViewportSize({ width: 1920, height: 1080 });
+        await this.setDesktopViewport(page);
         if (overflow > 5) throw new Error(`${overflow} elemen dengan text overflow di mobile`);
         return `${overflow} elemen overflow di mobile (OK)`;
       }));

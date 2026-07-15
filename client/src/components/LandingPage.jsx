@@ -8,14 +8,14 @@ export default function LandingPage({ onEnterApp, darkMode, toggleDarkMode }) {
     { icon: Monitor, title: 'Live Browser Streaming', desc: 'Pantau tes berjalan secara real-time via WebSocket dengan live browser view' },
     { icon: FileText, title: 'Laporan Excel & PDF', desc: 'Generate laporan profesional dalam format Excel dan PDF dengan detail lengkap' },
     { icon: Zap, title: '100+ Test Case Kritis', desc: 'Setiap modul berisi test case fungsional kritis dengan standar Senior QC/QA' },
-    { icon: Globe, title: 'Multi-Mode Pengujian', desc: 'Login Dashboard, Direct Dashboard, Login Only, atau Dashboard + Menu Login' },
+    { icon: Globe, title: 'Multi-Mode Pengujian', desc: 'Login Dashboard atau Direct Dashboard — pilih mode sesuai kebutuhan' },
     { icon: Code2, title: 'Playwright Engine', desc: 'Didukung oleh Playwright untuk pengujian browser otomatis yang andal' },
   ];
 
   const stats = [
     { value: '10', label: 'Modul Tes' },
     { value: '100+', label: 'Test Case' },
-    { value: '4', label: 'Mode Pengujian' },
+    { value: '2', label: 'Mode Pengujian' },
     { value: '2', label: 'Format Laporan' },
   ];
 

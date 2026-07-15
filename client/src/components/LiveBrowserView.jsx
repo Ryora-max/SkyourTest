@@ -6,6 +6,7 @@ export default function LiveBrowserView({ runId, fullscreen = false, runStatus, 
   const [stepInfo, setStepInfo] = useState(null);
   const [connected, setConnected] = useState(false);
   const [done, setDone] = useState(false);
+  const [frameSize, setFrameSize] = useState({ w: 1920, h: 1080 });
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
   const canvasRef = useRef(null);
@@ -61,6 +62,11 @@ export default function LiveBrowserView({ runId, fullscreen = false, runStatus, 
                   createImageBitmap(new Blob([jpegData], { type: 'image/jpeg' })).then(bmp => {
                     const canvas = canvasRef.current;
                     if (canvas) {
+                      if (canvas.width !== bmp.width || canvas.height !== bmp.height) {
+                        canvas.width = bmp.width;
+                        canvas.height = bmp.height;
+                        setFrameSize({ w: bmp.width, h: bmp.height });
+                      }
                       const ctx = canvas.getContext('2d');
                       ctx.imageSmoothingEnabled = true;
                       ctx.imageSmoothingQuality = 'high';
@@ -156,15 +162,15 @@ export default function LiveBrowserView({ runId, fullscreen = false, runStatus, 
           <div className={`flex items-center justify-center w-full h-full ${fullscreen ? 'min-h-0' : ''}`} style={fullscreen ? {} : { minHeight: '300px' }}>
             <canvas
               ref={canvasRef}
-              width={1920}
-              height={1080}
+              width={frameSize.w}
+              height={frameSize.h}
               className="block"
               style={{
                 maxWidth: '100%',
                 maxHeight: '100%',
                 width: 'auto',
                 height: 'auto',
-                aspectRatio: '16 / 9',
+                aspectRatio: `${frameSize.w} / ${frameSize.h}`,
                 objectFit: 'contain',
               }}
             />
