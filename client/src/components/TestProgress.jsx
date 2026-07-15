@@ -113,8 +113,9 @@ function TestProgress({ run, onLiveScreen, darkMode }) {
                 <Globe className="w-5 h-5 text-primary-600 dark:text-primary-400" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs text-slate-500 dark:text-slate-400">URL Target</p>
-                <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{run.url}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Web Target</p>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{run.webTarget || run.url}</p>
+                {run.role && run.role !== 'all' && <p className="text-xs text-slate-400">Role: {run.role}</p>}
               </div>
             </div>
             <div className="flex items-center gap-3">

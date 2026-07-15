@@ -1,33 +1,120 @@
 import { useState } from 'react';
-import { Globe, User, Lock, Chrome, Rocket, CheckCircle2, LogIn, LayoutDashboard, Loader2, AlertCircle, ChevronRight, ChevronLeft, Database } from 'lucide-react';
+import { Globe, User, Lock, Chrome, Rocket, CheckCircle2, LogIn, Loader2, AlertCircle, ChevronRight, ChevronLeft, Database, Briefcase, Brain, Users, Shield } from 'lucide-react';
 
-const ALL_MODULES = [
-  { id: 'login', label: 'Login & Auth', desc: 'Form login, validasi, SQL injection, XSS, session, logout, back-button security (12 tes)' },
-  { id: 'dashboard', label: 'Dashboard Layout', desc: 'Load, heading, cards/widgets, nav, sidebar, breadcrumb, user info, empty state (10 tes)' },
-  { id: 'navigation', label: 'Navigation & Menu', desc: 'Nav links, hamburger menu, footer, scroll, dropdown, tabs, breadcrumb, deep link (10 tes)' },
-  { id: 'structure', label: 'Structure & Layout', desc: 'HTML lang, viewport, heading hierarchy, semantic HTML, layout shift, overflow, z-index (10 tes)' },
-  { id: 'security', label: 'Security & Hack', desc: 'HTTPS, headers, CSRF, XSS, SQL injection, IDOR, cookie flags, clickjacking, path traversal, SSRF (15 tes)' },
-  { id: 'form_validation', label: 'Form & Input', desc: 'Required fields, email validation, maxlength, edge cases, XSS in form, label association (10 tes)' },
-  { id: 'responsive', label: 'Responsive & Mobile', desc: 'Mobile viewport, tablet, desktop, landscape, hamburger menu mobile, touch target, text overflow (8 tes)' },
-  { id: 'performance', label: 'Performance & Network', desc: 'DOM load, full load, request count, page weight, console errors, network 4xx/5xx, cache, compression (8 tes)' },
-  { id: 'crud', label: 'CRUD & Interaction', desc: 'Table detected, create button, form create, read data, edit, delete, cancel, search/filter, pagination, notification (10 tes)' },
-  { id: 'api_data', label: 'API & Data', desc: 'API 5xx, response time, content-type, sensitive data leak, cookie/session, rate limit, verbose error (7 tes)' },
+const WEB_PROFILES = [
+  {
+    id: 'competency',
+    name: 'Competency Management',
+    url: 'https://192.168.1.77:30052',
+    icon: Briefcase,
+    color: 'blue',
+    description: 'Platform manajemen kompetensi dengan AI generate, assessment, dan reporting',
+    roles: [
+      { id: 'all', label: 'Semua Role', email: '', password: '' },
+      { id: 'admin', label: 'Admin (Oki)', email: 'oki@beone-solution.com', password: '12345678' },
+      { id: 'user', label: 'User (Irfan)', email: 'irfan@beone-solution.com', password: '12345678' },
+    ],
+    modules: [
+      { id: 'login', label: 'Login & Auth', desc: 'Login per role, SSO, JWT, OAuth, register, reset password, session, logout, permission boundary' },
+      { id: 'dashboard', label: 'Dashboard', desc: 'Dashboard admin/peserta, cards, widgets, report, user info' },
+      { id: 'navigation', label: 'Navigation & Menu', desc: 'Nav links, sidebar, breadcrumb, deep link, footer' },
+      { id: 'structure', label: 'Structure & Layout', desc: 'HTML lang, viewport, heading hierarchy, semantic HTML' },
+      { id: 'security', label: 'Security & Hack', desc: 'Headers, CSRF, XSS, SQL injection, IDOR, cookie, permission boundary' },
+      { id: 'form_validation', label: 'Form & Input', desc: 'Required fields, email validation, edge cases, label association' },
+      { id: 'responsive', label: 'Responsive & Mobile', desc: 'Mobile, tablet, desktop, touch targets, overflow' },
+      { id: 'performance', label: 'Performance & Network', desc: 'Load time, network errors, console errors, API response' },
+      { id: 'crud_employee', label: 'CRUD Employee/Divisi/Role', desc: 'Create, read, update, delete employee, divisi, role, user' },
+      { id: 'crud_kompetensi', label: 'CRUD Kompetensi', desc: 'Master kompetensi, form kompetensi, AI generate, result, norm group/table' },
+      { id: 'test_assessment', label: 'Test & Assessment', desc: 'Test+dimensi, bank soal, import excel, navigasi, kamera, recording/zoom' },
+      { id: 'payment_booking', label: 'Payment & Booking', desc: 'Setting price, payment gateway, kode referal, booking, cancellation, reschedule' },
+      { id: 'notification_integration', label: 'Notification & Integration', desc: 'Email notif, OSS upload, foto profile, recording/zoom, AI integration' },
+      { id: 'report_export', label: 'Report & Export', desc: 'Report PDF, logo+PT dinamis, layout report, dashboard report' },
+    ],
+  },
+  {
+    id: 'psikotest',
+    name: 'Psikotest Platform',
+    url: 'https://192.168.1.77:30055/login',
+    icon: Brain,
+    color: 'purple',
+    description: 'Platform asesmen psikologi dengan multi-role, AI generate, dan booking consultant',
+    roles: [
+      { id: 'all', label: 'Semua Role', email: '', password: '' },
+      { id: 'admin', label: 'Admin', email: 'admin@psikotest.id', password: 'admin123' },
+      { id: 'useradmin', label: 'User Admin', email: 'useradmin@gmail.com', password: '12345678' },
+      { id: 'user', label: 'User', email: 'user@gmail.com', password: '12345678' },
+      { id: 'psikolog', label: 'Psikolog', email: 'psikolog@psikotest.id', password: 'psikolog123' },
+    ],
+    modules: [
+      { id: 'login', label: 'Login & Auth', desc: 'Login per role (4 roles), permission boundary, session, logout' },
+      { id: 'dashboard', label: 'Dashboard', desc: 'Dashboard admin/peserta, cards, widgets, report' },
+      { id: 'navigation', label: 'Navigation & Menu', desc: 'Nav links, sidebar, breadcrumb, deep link, footer' },
+      { id: 'structure', label: 'Structure & Layout', desc: 'HTML lang, viewport, heading hierarchy, semantic HTML' },
+      { id: 'security', label: 'Security & Hack', desc: 'Headers, CSRF, XSS, SQL injection, IDOR, cookie, permission boundary' },
+      { id: 'form_validation', label: 'Form & Input', desc: 'Required fields, email validation, edge cases, label association' },
+      { id: 'responsive', label: 'Responsive & Mobile', desc: 'Mobile, tablet, desktop, touch targets, overflow' },
+      { id: 'performance', label: 'Performance & Network', desc: 'Load time, network errors, console errors, API response' },
+      { id: 'crud_master', label: 'CRUD Master Data', desc: 'Master kompetensi, bank soal, dimensi, norm group/table' },
+      { id: 'test_assessment', label: 'Test & Assessment', desc: 'Test+dimensi, mulai ujian, navigasi test, kamera' },
+      { id: 'ai_integration', label: 'AI Integration', desc: 'AI generate kompetensi, AI generate soal, integrasi AI' },
+      { id: 'booking_consultant', label: 'Booking Consultant', desc: 'Booking, set jadwal, update done, result halaman' },
+      { id: 'result_report', label: 'Result & Report', desc: 'Result kompetensi, form kompetensi user, dashboard report' },
+    ],
+  },
+  {
+    id: 'consultant',
+    name: 'Consultant Platform',
+    url: 'https://192.168.1.77:30056/',
+    icon: Users,
+    color: 'green',
+    description: 'Platform konsultasi dengan booking, payment, dan multi-role (admin, client, consultant)',
+    roles: [
+      { id: 'all', label: 'Semua Role', email: '', password: '' },
+      { id: 'admin', label: 'Admin', email: 'admin@konsulta.id', password: 'admin123' },
+      { id: 'client', label: 'Client (Budi)', email: 'budi@konsulta.id', password: 'client123' },
+      { id: 'consultant', label: 'Consultant (Andi)', email: 'andi@konsulta.id', password: 'consultant123' },
+    ],
+    modules: [
+      { id: 'login', label: 'Login & Auth', desc: 'Login per role (3 roles), register, reset password, OAuth, permission boundary' },
+      { id: 'landing_page', label: 'Landing Page', desc: 'Landing page content, CTA, FAQ, home page navigation' },
+      { id: 'dashboard', label: 'Dashboard', desc: 'Dashboard admin/client/consultant, cards, widgets' },
+      { id: 'navigation', label: 'Navigation & Menu', desc: 'Nav links, sidebar, breadcrumb, deep link, footer' },
+      { id: 'structure', label: 'Structure & Layout', desc: 'HTML lang, viewport, heading hierarchy, semantic HTML' },
+      { id: 'security', label: 'Security & Hack', desc: 'Headers, CSRF, XSS, SQL injection, IDOR, cookie, permission boundary' },
+      { id: 'form_validation', label: 'Form & Input', desc: 'Required fields, email validation, edge cases, label association' },
+      { id: 'responsive', label: 'Responsive & Mobile', desc: 'Mobile, tablet, desktop, touch targets, overflow' },
+      { id: 'performance', label: 'Performance & Network', desc: 'Load time, network errors, console errors, API response' },
+      { id: 'profile_management', label: 'Profile Management', desc: 'Profile consultant, profil client, register consultant, foto profile' },
+      { id: 'booking_schedule', label: 'Booking & Schedule', desc: 'Booking, set jadwal, update done, cancellation, reschedule' },
+      { id: 'payment_referal', label: 'Payment & Referal', desc: 'Payment gateway, kode referal, booking dengan referal' },
+      { id: 'notification', label: 'Notification', desc: 'Email notif, notif system, notification settings' },
+      { id: 'report_export', label: 'Report & Export', desc: 'Dashboard report, export data' },
+    ],
+  },
 ];
 
-const TEST_MODES = [
-  { id: 'login_dashboard', label: 'Login > Dashboard > Cek All', icon: LogIn, desc: 'URL = halaman login. Sistem login dengan akun, lalu scan semua modul di dashboard setelah login.' },
-  { id: 'direct_dashboard', label: 'Dashboard > Cek All', icon: LayoutDashboard, desc: 'URL = dashboard langsung. Tidak perlu login, scan semua modul langsung di halaman dashboard.' },
-];
+const COLOR_MAP = {
+  blue: { bg: 'from-blue-500 to-blue-700', ring: 'border-blue-500 bg-blue-50/80 dark:bg-blue-900/30', text: 'text-blue-600 dark:text-blue-400', shadow: 'shadow-blue-500/30' },
+  purple: { bg: 'from-purple-500 to-purple-700', ring: 'border-purple-500 bg-purple-50/80 dark:bg-purple-900/30', text: 'text-purple-600 dark:text-purple-400', shadow: 'shadow-purple-500/30' },
+  green: { bg: 'from-green-500 to-green-700', ring: 'border-green-500 bg-green-50/80 dark:bg-green-900/30', text: 'text-green-600 dark:text-green-400', shadow: 'shadow-green-500/30' },
+};
 
 function TestConfigForm({ onStart, disabled = false }) {
   const [step, setStep] = useState(1);
-  const [url, setUrl] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [webTarget, setWebTarget] = useState('');
+  const [selectedRole, setSelectedRole] = useState('all');
   const [browser] = useState('chromium');
-  const [testMode, setTestMode] = useState('login_dashboard');
   const [selectedModules, setSelectedModules] = useState(['all']);
   const [isStarting, setIsStarting] = useState(false);
+
+  const profile = WEB_PROFILES.find(p => p.id === webTarget);
+  const currentModules = profile?.modules || [];
+
+  const handleSelectWeb = (id) => {
+    setWebTarget(id);
+    setSelectedRole('all');
+    setSelectedModules(['all']);
+  };
 
   const toggleModule = (id) => {
     if (id === 'all') {
@@ -44,14 +131,21 @@ function TestConfigForm({ onStart, disabled = false }) {
     }
   };
 
-  const canProceedStep1 = url.trim().length > 0;
+  const canProceedStep1 = webTarget.length > 0;
   const canProceedStep2 = selectedModules.length > 0;
 
   const handleSubmit = async () => {
-    if (!url) return;
+    if (!profile) return;
     setIsStarting(true);
     try {
-      await onStart({ url, username, password, browser, testMode, testModules: selectedModules });
+      await onStart({
+        url: profile.url,
+        webTarget: profile.id,
+        role: selectedRole,
+        browser,
+        testMode: 'login_dashboard',
+        testModules: selectedModules,
+      });
     } finally {
       setIsStarting(false);
     }
@@ -68,8 +162,8 @@ function TestConfigForm({ onStart, disabled = false }) {
             <Rocket className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">Tes Baru</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-400">10 modul tes, 100 test case kritis fungsional</p>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">QC Test — Multi-Web</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400">3 web target · Multi-role deep testing · Senior QC/QA standard</p>
           </div>
         </div>
       </div>
@@ -117,44 +211,38 @@ function TestConfigForm({ onStart, disabled = false }) {
       {/* Step 1: Configuration */}
       {step === 1 && (
         <div className="space-y-4 sm:space-y-6 animate-slide-right">
+          {/* Web Target Selector */}
           <div className="glass-card p-4 sm:p-6">
             <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
               <Globe className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-              URL Website Target
+              Pilih Web Target
             </label>
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              required
-              placeholder="https://contoh-website.com"
-              className="input-field text-base"
-            />
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">Masukkan URL lengkap termasuk https:// atau http://</p>
-          </div>
-
-          <div className="glass-card p-4 sm:p-6">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Mode Pengujian</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Pilih mode sesuai jenis halaman yang akan dites agar tes berjalan akurat.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {TEST_MODES.map(mode => {
-                const Icon = mode.icon;
-                const active = testMode === mode.id;
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {WEB_PROFILES.map(wp => {
+                const Icon = wp.icon;
+                const active = webTarget === wp.id;
+                const colors = COLOR_MAP[wp.color] || COLOR_MAP.blue;
                 return (
                   <button
-                    key={mode.id}
+                    key={wp.id}
                     type="button"
-                    onClick={() => setTestMode(mode.id)}
-                    className={`flex items-start gap-3 p-4 rounded-xl border-2 transition-all text-left ${
+                    onClick={() => handleSelectWeb(wp.id)}
+                    className={`flex flex-col items-start gap-2 p-4 rounded-xl border-2 transition-all text-left ${
                       active
-                        ? 'border-primary-500 bg-primary-50/80 dark:bg-primary-900/30 shadow-lg shadow-primary-500/10'
+                        ? `${colors.ring} shadow-lg ${colors.shadow}`
                         : 'border-slate-200/60 hover:border-slate-300 dark:border-slate-600/50 dark:hover:border-slate-500'
                     }`}
                   >
-                    <Icon className={`w-5 h-5 mt-0.5 flex-shrink-0 ${active ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 dark:text-slate-500'}`} />
+                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${colors.bg} flex items-center justify-center shadow-lg ${colors.shadow} flex-shrink-0`}>
+                      <Icon className="w-5 h-5 text-white" />
+                    </div>
                     <div>
-                      <p className={`text-sm font-semibold ${active ? 'text-primary-700 dark:text-primary-400' : 'text-slate-900 dark:text-slate-100'}`}>{mode.label}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{mode.desc}</p>
+                      <p className={`text-sm font-semibold ${active ? colors.text : 'text-slate-900 dark:text-slate-100'}`}>{wp.name}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{wp.description}</p>
+                    </div>
+                    <div className="flex items-center gap-1 mt-1">
+                      <Shield className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">{wp.roles.length - 1} roles · {wp.modules.length} modul</span>
                     </div>
                   </button>
                 );
@@ -162,39 +250,46 @@ function TestConfigForm({ onStart, disabled = false }) {
             </div>
           </div>
 
-          {testMode !== 'direct_dashboard' && (
-            <div className="glass-card p-4 sm:p-6" key={`creds-${testMode}`}>
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Kredensial Login</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Isi kredensial untuk login. Tes akan memvalidasi login dengan kredensial invalid dan valid.</p>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                    <User className="w-4 h-4" /> Username / Email
-                  </label>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="username_anda"
-                    className="input-field"
-                  />
-                </div>
-                <div>
-                  <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                    <Lock className="w-4 h-4" /> Password
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="input-field"
-                  />
-                </div>
+          {/* Role Selector */}
+          {profile && (
+            <div className="glass-card p-4 sm:p-6 animate-fade-in" key={`role-${webTarget}`}>
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                <User className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                Pilih Role
+              </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Pilih role untuk testing. "Semua Role" akan test setiap role secara berurutan.</p>
+              <div className="flex flex-wrap gap-2">
+                {profile.roles.map(r => {
+                  const active = selectedRole === r.id;
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setSelectedRole(r.id)}
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 transition-all text-sm font-medium ${
+                        active
+                          ? 'border-primary-500 bg-primary-50/80 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 shadow-lg shadow-primary-500/10'
+                          : 'border-slate-200/60 hover:border-slate-300 dark:border-slate-600/50 dark:hover:border-slate-500 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {r.id === 'all' && <CheckCircle2 className="w-4 h-4" />}
+                      {r.label}
+                    </button>
+                  );
+                })}
               </div>
+              {selectedRole !== 'all' && (
+                <div className="mt-4 p-3 rounded-xl bg-slate-50/60 dark:bg-slate-800/40">
+                  <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Email: {profile.roles.find(r => r.id === selectedRole)?.email}</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
+          {/* Browser info */}
           <div className="glass-card p-4 sm:p-6">
             <div className="flex items-center gap-3 mb-1">
               <Chrome className="w-5 h-5 text-primary-600 dark:text-primary-400" />
@@ -222,7 +317,7 @@ function TestConfigForm({ onStart, disabled = false }) {
           <div className="glass-card p-4 sm:p-6">
             <div className="flex items-center gap-2 mb-1">
               <Database className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">10 Modul Tes — 100 Test Case Kritis</h3>
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{currentModules.length} Modul Tes — {profile?.name || 'Web'}</h3>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Pilih modul untuk pengujian. Setiap modul berisi tes fungsional kritis (Senior QC/QA Standard).</p>
             <div className="space-y-3">
@@ -239,13 +334,13 @@ function TestConfigForm({ onStart, disabled = false }) {
                   <CheckCircle2 className={`w-5 h-5 ${selectedModules.includes('all') ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400'}`} />
                   <div className="text-left">
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Semua Modul</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Jalankan semua 10 modul (100 test case kritis)</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Jalankan semua {currentModules.length} modul</p>
                   </div>
                 </div>
               </button>
 
               <div className="grid sm:grid-cols-2 gap-3">
-                {ALL_MODULES.map(mod => {
+                {currentModules.map(mod => {
                   const selected = selectedModules.includes(mod.id) || selectedModules.includes('all');
                   return (
                     <button
@@ -299,26 +394,18 @@ function TestConfigForm({ onStart, disabled = false }) {
               <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50/60 dark:bg-slate-800/40">
                 <Globe className="w-5 h-5 text-slate-400 flex-shrink-0" />
                 <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">URL Target</p>
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{url}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Web Target</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{profile?.name || '-'}</p>
+                  <p className="text-xs text-slate-400">{profile?.url}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50/60 dark:bg-slate-800/40">
-                {(() => { const Icon = TEST_MODES.find(m => m.id === testMode)?.icon || LogIn; return <Icon className="w-5 h-5 text-slate-400 flex-shrink-0" />; })()}
+                <User className="w-5 h-5 text-slate-400 flex-shrink-0" />
                 <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Mode Pengujian</p>
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{TEST_MODES.find(m => m.id === testMode)?.label || '-'}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Role</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{profile?.roles.find(r => r.id === selectedRole)?.label || '-'}</p>
                 </div>
               </div>
-              {testMode !== 'direct_dashboard' && (username || password) && (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50/60 dark:bg-slate-800/40">
-                  <User className="w-5 h-5 text-slate-400 flex-shrink-0" />
-                  <div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Kredensial</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{username ? `${username} / ${'•'.repeat(password.length || 0)}` : 'Tidak diisi'}</p>
-                  </div>
-                </div>
-              )}
               <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50/60 dark:bg-slate-800/40">
                 <Chrome className="w-5 h-5 text-slate-400 flex-shrink-0" />
                 <div>
@@ -327,13 +414,13 @@ function TestConfigForm({ onStart, disabled = false }) {
                 </div>
               </div>
               <div className="p-3 rounded-xl bg-slate-50/60 dark:bg-slate-800/40">
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Modul Terpilih ({selectedModules.includes('all') ? ALL_MODULES.length : selectedModules.length})</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Modul Terpilih ({selectedModules.includes('all') ? currentModules.length : selectedModules.length})</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedModules.includes('all') ? (
-                    <span className="badge badge-pass">Semua Modul ({ALL_MODULES.length})</span>
+                    <span className="badge badge-pass">Semua Modul ({currentModules.length})</span>
                   ) : (
                     selectedModules.map(modId => {
-                      const mod = ALL_MODULES.find(m => m.id === modId);
+                      const mod = currentModules.find(m => m.id === modId);
                       return mod ? <span key={modId} className="badge badge-pass">{mod.label}</span> : null;
                     })
                   )}

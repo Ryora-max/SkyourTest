@@ -195,13 +195,13 @@ function TestResults({ run, onDownloadReport, onDownloadPdf, onNewTest, onBack }
         <div className="grid sm:grid-cols-3 gap-2 sm:gap-4 text-sm">
           <div className="flex items-center gap-2">
             <Globe className="w-4 h-4 text-slate-400" />
-            <span className="text-slate-500 dark:text-slate-400">URL:</span>
-            <span className="font-medium text-slate-900 dark:text-slate-100 truncate">{run.url}</span>
+            <span className="text-slate-500 dark:text-slate-400">Web:</span>
+            <span className="font-medium text-slate-900 dark:text-slate-100 truncate">{run.webTarget || run.url}</span>
           </div>
           <div className="flex items-center gap-2">
             <BrowserIcon className="w-4 h-4 text-slate-400" />
-            <span className="text-slate-500 dark:text-slate-400">Browser:</span>
-            <span className="font-medium text-slate-900 dark:text-slate-100 capitalize">{run.browser}</span>
+            <span className="text-slate-500 dark:text-slate-400">Role:</span>
+            <span className="font-medium text-slate-900 dark:text-slate-100 capitalize">{run.role || 'all'}</span>
           </div>
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-slate-400" />

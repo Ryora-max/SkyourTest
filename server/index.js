@@ -178,7 +178,7 @@ app.get('/api/active-run', (req, res) => {
 });
 
 app.post('/api/runs', rateLimitMiddleware(1, 10000), async (req, res) => {
-  const { url, username, password, browser, testModules, testMode } = req.body;
+  const { url, username, password, browser, testModules, testMode, webTarget, role } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
   }
@@ -201,6 +201,8 @@ app.post('/api/runs', rateLimitMiddleware(1, 10000), async (req, res) => {
     browser: browser || 'chromium',
     testMode: testMode || 'login_dashboard',
     testModules: testModules || ['all'],
+    webTarget: webTarget || '',
+    role: role || 'all',
     status: 'running',
     startTime: new Date().toISOString(),
     endTime: null,
@@ -305,7 +307,7 @@ app.post('/api/runs/:id/cancel', (req, res) => {
 // ===== CI/CD Webhook =====
 
 app.post('/api/webhook/trigger', requireApiKey, async (req, res) => {
-  const { url, username, password, browser, testModules, testMode, webhookCallback } = req.body;
+  const { url, username, password, browser, testModules, testMode, webTarget, role, webhookCallback } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
   }
@@ -327,6 +329,8 @@ app.post('/api/webhook/trigger', requireApiKey, async (req, res) => {
     browser: browser || 'chromium',
     testMode: testMode || 'login_dashboard',
     testModules: testModules || ['all'],
+    webTarget: webTarget || '',
+    role: role || 'all',
     status: 'running',
     startTime: new Date().toISOString(),
     endTime: null,

@@ -399,7 +399,7 @@ export default function LiveTestPage({ run, onExit, onViewResults, onCancel, dar
           </div>
           <div className="min-w-0">
             <span className={`text-sm font-bold block truncate ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>Live Test Screen</span>
-            <span className={`text-xs truncate block font-mono ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>{run?.url || ''}</span>
+            <span className={`text-xs truncate block font-mono ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>{run?.webTarget ? `${run.webTarget} · ${run.role || 'all'}` : run?.url || ''}</span>
           </div>
         </div>
 

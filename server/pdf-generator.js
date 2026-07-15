@@ -92,7 +92,9 @@ class PdfGenerator {
 
         // ===== INFO TABLE =====
         drawSectionTitle('Informasi Pengujian');
-        drawInfoRow('URL Target', run.url || '-');
+        drawInfoRow('Web Target', run.webTarget || run.url || '-');
+        drawInfoRow('Role', run.role || 'all');
+        drawInfoRow('URL', run.url || '-');
         drawInfoRow('Browser Engine', 'Chromium');
         const modeNames = { login_dashboard: 'Login > Dashboard > Cek All', direct_dashboard: 'Dashboard > Cek All' };
         drawInfoRow('Mode Pengujian', modeNames[run.testMode] || 'Login ke Dashboard');

@@ -91,7 +91,8 @@ function RunHistory({ runs, onView, onDelete, onDownloadReport, onDownloadPdf })
                 <div className="flex-1 min-w-0 w-full">
                   <div className="flex items-center gap-2 mb-2">
                     <Globe className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                    <span className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{run.url}</span>
+                    <span className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{run.webTarget || run.url}</span>
+                    {run.role && run.role !== 'all' && <span className="text-xs text-slate-400">· {run.role}</span>}
                     <span className={`badge ${
                       run.status === 'completed' ? 'badge-pass' :
                       run.status === 'running' ? 'badge-running' : 'badge-fail'

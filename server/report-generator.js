@@ -11,7 +11,7 @@ class ReportGenerator {
   }
 
   async generateExcel(run) {
-    const { results, summary, url, browser, startTime, endTime, id } = run;
+    const { results, summary, url, browser, startTime, endTime, id, webTarget, role } = run;
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'SkyourTest QC Automation';
     workbook.created = new Date();
@@ -46,7 +46,9 @@ class ReportGenerator {
 
     const infoItems = [
       { label: 'ID Laporan', value: id.substring(0, 8).toUpperCase() },
-      { label: 'URL Target', value: url },
+      { label: 'Web Target', value: webTarget || url },
+      { label: 'Role', value: role || 'all' },
+      { label: 'URL', value: url },
       { label: 'Browser', value: browser.charAt(0).toUpperCase() + browser.slice(1) },
       { label: 'Tanggal Tes', value: new Date(startTime).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) },
       { label: 'Waktu Mulai', value: new Date(startTime).toLocaleTimeString('id-ID', { timeZone: 'Asia/Jakarta' }) + ' WIB' },

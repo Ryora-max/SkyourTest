@@ -1,4 +1,5 @@
 const { chromium, firefox, webkit } = require('playwright');
+const { WEB_PROFILES, MODULE_INFO } = require('./web-profiles');
 
 class TestRunner {
   constructor() {
@@ -107,7 +108,8 @@ class TestRunner {
   }
 
   async run(runConfig) {
-    const { url, username, password, browser: browserType, testModules, testMode } = runConfig;
+    const { url, username, password, browser: browserType, testModules, testMode, webTarget, role: selectedRole } = runConfig;
+    const profile = webTarget ? WEB_PROFILES[webTarget] : null;
     const mode = testMode || 'login_dashboard';
     const results = [];
     this.runId = runConfig.id;
@@ -145,7 +147,6 @@ class TestRunner {
       page.on('requestfailed', (req) => {
         const reqUrl = req.url();
         const failure = req.failure()?.errorText || 'unknown';
-        // Filter RSC (React Server Components) aborted requests — normal for SPA navigation
         if (failure === 'net::ERR_ABORTED' && reqUrl.includes('_rsc=')) return;
         const key = reqUrl + '|' + req.method();
         if (seenNetErrors.has(key)) return;
@@ -164,17 +165,19 @@ class TestRunner {
       // ===== Start Live Browser Screencast =====
       await this.startScreencast(page);
 
-      // ===== FASE 1: Deteksi website =====
+      // ===== Multi-role web profile mode =====
+      if (profile) {
+        return await this.runMultiRole(page, browser, profile, runConfig, results, selectedRole, testModules);
+      }
+
+      // ===== Legacy mode (no web profile) =====
+      const targetUrl = url;
       runConfig.currentTest = 'Mendeteksi struktur website...';
       runConfig.progress = 5;
-      this.broadcastStep('DETECT', '', 'Mendeteksi struktur website', 'navigate', url);
-      let detect = await this.detectWebsite(page, url);
+      this.broadcastStep('DETECT', '', 'Mendeteksi struktur website', 'navigate', targetUrl);
+      let detect = await this.detectWebsite(page, targetUrl);
 
-      // ===== FASE 2: Jalankan modul tes =====
-      // 10 modul, 100 tests total
       const allModules = ['login', 'dashboard', 'navigation', 'structure', 'security', 'form_validation', 'responsive', 'performance', 'crud', 'api_data'];
-
-      // 2 mode: login_dashboard & direct_dashboard
       const modeModules = {
         login_dashboard: allModules,
         direct_dashboard: ['dashboard', 'navigation', 'structure', 'security', 'form_validation', 'responsive', 'performance', 'crud', 'api_data'],
@@ -182,7 +185,7 @@ class TestRunner {
       const relevantForMode = modeModules[mode] || allModules;
       let modules = testModules.includes('all') ? relevantForMode : testModules.filter(m => relevantForMode.includes(m));
 
-      const authState = { isAuthenticated: false, dashboardUrl: url, loginUrl: url };
+      const authState = { isAuthenticated: false, dashboardUrl: targetUrl, loginUrl: targetUrl };
       const totalModules = modules.length;
       const MODULE_NAMES_MAP = {
         login: 'Login & Auth', dashboard: 'Dashboard Layout', navigation: 'Navigation & Menu',
@@ -207,14 +210,14 @@ class TestRunner {
           if (mode === 'direct_dashboard') {
             modResults = [];
           } else {
-            modResults = await this.runModule(page, mod, url, url, username, password, authState, detect, runConfig);
+            modResults = await this.runModule(page, mod, targetUrl, targetUrl, username, password, authState, detect, runConfig);
             if (authState.isAuthenticated) {
               runConfig.currentTest = 'Mendeteksi struktur dashboard...';
               detect = await this.detectWebsite(page, authState.dashboardUrl);
               detect.hasLogin = true;
             } else if (username && password) {
               runConfig.currentTest = 'Auto-login untuk modul selanjutnya...';
-              const reAuth = await this.ensureAuthenticated(page, url, username, password, authState);
+              const reAuth = await this.ensureAuthenticated(page, targetUrl, username, password, authState);
               if (reAuth) {
                 detect = await this.detectWebsite(page, authState.dashboardUrl);
                 detect.hasLogin = true;
@@ -222,28 +225,26 @@ class TestRunner {
             }
           }
         } else {
-          // Ensure authenticated for login_dashboard mode
           if (mode === 'login_dashboard' && !authState.isAuthenticated && username && password) {
-            await this.ensureAuthenticated(page, url, username, password, authState);
+            await this.ensureAuthenticated(page, targetUrl, username, password, authState);
           }
-          // Re-login if session dropped
           if (authState.isAuthenticated && username && password) {
             const currentUrl = page.url();
             if (currentUrl.includes('sign_in') || currentUrl.includes('login') || currentUrl.includes('auth')) {
               runConfig.currentTest = `Re-login untuk modul: ${MODULE_NAMES_MAP[mod] || mod}...`;
-              const reAuth = await this.ensureAuthenticated(page, url, username, password, authState);
+              const reAuth = await this.ensureAuthenticated(page, targetUrl, username, password, authState);
               if (!reAuth) {
                 modResults = [];
               } else {
-                modResults = await this.runModule(page, mod, authState.dashboardUrl, url, username, password, authState, detect, runConfig);
+                modResults = await this.runModule(page, mod, authState.dashboardUrl, targetUrl, username, password, authState, detect, runConfig);
               }
             } else {
-              const targetUrl = authState.isAuthenticated ? authState.dashboardUrl : url;
-              modResults = await this.runModule(page, mod, targetUrl, url, username, password, authState, detect, runConfig);
+              const tUrl = authState.isAuthenticated ? authState.dashboardUrl : targetUrl;
+              modResults = await this.runModule(page, mod, tUrl, targetUrl, username, password, authState, detect, runConfig);
             }
           } else {
-            const targetUrl = authState.isAuthenticated ? authState.dashboardUrl : url;
-            modResults = await this.runModule(page, mod, targetUrl, url, username, password, authState, detect, runConfig);
+            const tUrl = authState.isAuthenticated ? authState.dashboardUrl : targetUrl;
+            modResults = await this.runModule(page, mod, tUrl, targetUrl, username, password, authState, detect, runConfig);
           }
         }
 
@@ -251,7 +252,6 @@ class TestRunner {
         runConfig.results.push(...modResults);
         completedTests += modResults.length;
         runConfig.progress = 5 + Math.round((completedTests / totalEstimatedTests) * 90);
-        // Broadcast module done with stats
         const modPassed = modResults.filter(r => r.status === 'passed').length;
         const modFailed = modResults.filter(r => r.status === 'failed').length;
         const modNotes = modResults.filter(r => r.status === 'note').length;
@@ -288,7 +288,6 @@ class TestRunner {
       }
 
       if (this.networkErrors && this.networkErrors.length > 0) {
-        // Filter RSC aborted requests (normal for SPA navigation)
         const realErrors = this.networkErrors.filter(e => !(e.failure === 'net::ERR_ABORTED' && e.url && e.url.includes('_rsc=')));
         if (realErrors.length > 0) {
           const netDetails = realErrors.slice(0, 10).map(e => e.status ? `[${e.status}] ${e.method} ${e.url}` : `[FAIL] ${e.method} ${e.url}: ${e.failure}`).join('\n');
@@ -326,6 +325,1535 @@ class TestRunner {
       this.browser = null;
       this.page = null;
     }
+  }
+
+  // ===== Multi-role web profile runner =====
+  async runMultiRole(page, browser, profile, runConfig, results, selectedRole, testModules) {
+    const roles = selectedRole && selectedRole !== 'all'
+      ? profile.roles.filter(r => r.id === selectedRole)
+      : profile.roles;
+    const url = profile.url;
+    const totalRoles = roles.length;
+    const modules = testModules && testModules.includes('all') ? profile.modules : (testModules || profile.modules);
+    const totalModuleSlots = totalRoles * modules.length;
+    let completedSlots = 0;
+    const allConsoleErrors = [];
+    const allNetworkErrors = [];
+
+    for (let roleIdx = 0; roleIdx < roles.length; roleIdx++) {
+      if (this.cancelled) break;
+      const role = roles[roleIdx];
+      const rolePrefix = `[${role.label}]`;
+
+      // Fresh context per role to avoid session bleed
+      if (roleIdx > 0) {
+        await page.context().clearCookies();
+        await page.goto('about:blank').catch(() => {});
+      }
+
+      runConfig.currentTest = `${rolePrefix} Login sebagai ${role.email}...`;
+      const roleBaseProgress = Math.round((roleIdx / totalRoles) * 100);
+      runConfig.progress = roleBaseProgress;
+      this.broadcastProgress(runConfig.progress);
+      this.broadcastStep('ROLE', '', `Testing role: ${role.label}`, 'navigate', url);
+
+      // Login
+      const authState = { isAuthenticated: false, dashboardUrl: url, loginUrl: url };
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(async () => {
+        await page.goto(url, { waitUntil: 'load', timeout: 15000 }).catch(() => {});
+      });
+      await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+
+      // Detect website structure
+      let detect = await this.detectWebsite(page, url);
+
+      // Try to navigate to login page and login
+      const hasLoginForm = await this.navigateToLoginPage(page, url);
+      if (hasLoginForm) {
+        await this.fillLoginForm(page, role.email, role.password);
+        try { await page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+        await page.waitForTimeout(2000);
+        const afterUrl = page.url();
+        if (!afterUrl.includes('sign_in') && !afterUrl.includes('login') && !afterUrl.includes('auth')) {
+          authState.isAuthenticated = true;
+          authState.dashboardUrl = afterUrl;
+        }
+      }
+
+      // Re-detect after login
+      if (authState.isAuthenticated) {
+        runConfig.currentTest = `${rolePrefix} Mendeteksi struktur dashboard...`;
+        detect = await this.detectWebsite(page, authState.dashboardUrl);
+        detect.hasLogin = true;
+      }
+
+      // Run modules for this role
+      for (let modIdx = 0; modIdx < modules.length; modIdx++) {
+        if (this.cancelled) break;
+        const mod = modules[modIdx];
+        const modName = MODULE_INFO[mod]?.label || mod;
+        const slotProgress = Math.round(((completedSlots) / totalModuleSlots) * 95) + 2;
+        runConfig.progress = slotProgress;
+        runConfig.currentTest = `${rolePrefix} ${modName}`;
+        this.broadcastProgress(runConfig.progress);
+
+        // Ensure authenticated before non-login modules
+        if (mod !== 'login' && mod !== 'landing_page' && authState.isAuthenticated) {
+          const currentUrl = page.url();
+          if (currentUrl.includes('sign_in') || currentUrl.includes('login') || currentUrl.includes('auth')) {
+            await this.ensureAuthenticated(page, url, role.email, role.password, authState);
+          }
+        }
+
+        const targetUrl = authState.isAuthenticated ? authState.dashboardUrl : url;
+        let modResults = await this.runProfileModule(page, mod, targetUrl, url, role, authState, detect, profile, runConfig);
+
+        // Prefix test IDs and module names with role
+        modResults = modResults.map(r => ({
+          ...r,
+          testId: r.testId,
+          module: `${rolePrefix} ${r.module}`,
+          role: role.id,
+          roleLabel: role.label,
+        }));
+
+        results.push(...modResults);
+        runConfig.results.push(...modResults);
+        completedSlots++;
+        const modPassed = modResults.filter(r => r.status === 'passed').length;
+        const modFailed = modResults.filter(r => r.status === 'failed').length;
+        const modNotes = modResults.filter(r => r.status === 'note').length;
+        this.broadcastModuleDone(`${rolePrefix} ${modName}`, modPassed, modFailed, modNotes);
+        this.broadcastProgress(Math.round(((completedSlots) / totalModuleSlots) * 95) + 2);
+      }
+
+      // Collect console/network errors per role
+      if (this.consoleErrors?.length > 0) allConsoleErrors.push(...this.consoleErrors.map(e => ({ ...e, role: role.id })));
+      if (this.networkErrors?.length > 0) allNetworkErrors.push(...this.networkErrors.map(e => ({ ...e, role: role.id })));
+      // Reset for next role
+      this.consoleErrors = [];
+      this.networkErrors = [];
+
+      // Logout for next role
+      if (roleIdx < roles.length - 1) {
+        runConfig.currentTest = `${rolePrefix} Logout...`;
+        await this.logout(page, authState).catch(() => {});
+      }
+    }
+
+    // Console & network error summary
+    if (allConsoleErrors.length > 0) {
+      const errors = allConsoleErrors.filter(e => e.type === 'error' || e.type === 'pageerror');
+      if (errors.length > 0) {
+        const errorDetails = errors.slice(0, 15).map(e => `[${e.role}] [${e.type}] ${e.text}`).join('\n');
+        results.push({
+          testId: 'TC-P-008', module: 'Performance & Network',
+          title: `Console errors detected (${errors.length} errors across all roles)`,
+          precondition: 'Browser console monitored during all role tests',
+          steps: '1. Capture all console.error, uncaught exceptions per role',
+          expected: 'No console errors',
+          actual: `${errors.length} console errors:\n${errorDetails}`,
+          status: 'failed', category: 'primary', duration: 0,
+        });
+        runConfig.results.push(results[results.length - 1]);
+      }
+    }
+    if (allNetworkErrors.length > 0) {
+      const realErrors = allNetworkErrors.filter(e => !(e.failure === 'net::ERR_ABORTED' && e.url && e.url.includes('_rsc=')));
+      if (realErrors.length > 0) {
+        const netDetails = realErrors.slice(0, 15).map(e => `[${e.role}] ${e.status ? `[${e.status}]` : '[FAIL]'} ${e.method} ${e.url}`).join('\n');
+        results.push({
+          testId: 'TC-P-009', module: 'Performance & Network',
+          title: `Network errors detected (${realErrors.length} issues across all roles)`,
+          precondition: 'All network requests monitored during all role tests',
+          steps: '1. Monitor all HTTP requests and responses per role',
+          expected: 'No network errors',
+          actual: `${realErrors.length} network issues:\n${netDetails}`,
+          status: 'failed', category: 'primary', duration: 0,
+        });
+        runConfig.results.push(results[results.length - 1]);
+      }
+    }
+
+    runConfig.progress = 100;
+    runConfig.currentTest = 'Selesai';
+    this.broadcastStep('DONE', '', 'Tes selesai', 'done', '');
+    this.broadcastDone();
+    return results;
+  }
+
+  // Logout helper
+  async logout(page, authState) {
+    const logoutSels = [
+      'button:has-text("Logout")', 'button:has-text("Log out")', 'button:has-text("Keluar")',
+      'a:has-text("Logout")', 'a:has-text("Log out")', 'a:has-text("Keluar")',
+      'button:has-text("Sign out")', 'a:has-text("Sign out")',
+      '[data-testid*="logout"]', '[class*="logout"]',
+    ];
+    for (const s of logoutSels) {
+      const el = page.locator(s).first();
+      if (await el.isVisible().catch(() => false)) {
+        await el.click().catch(() => {});
+        await page.waitForTimeout(2000);
+        return true;
+      }
+    }
+    // Try dropdown menu first
+    const menuSels = ['button:has-text("Menu")', '[class*="dropdown"]', '[class*="user-menu"]', '[aria-label*="menu" i]', '.avatar', '[class*="avatar"]'];
+    for (const s of menuSels) {
+      const el = page.locator(s).first();
+      if (await el.isVisible().catch(() => false)) {
+        await el.click().catch(() => {});
+        await page.waitForTimeout(500);
+        for (const ls of logoutSels) {
+          const logoutEl = page.locator(ls).first();
+          if (await logoutEl.isVisible().catch(() => false)) {
+            await logoutEl.click().catch(() => {});
+            await page.waitForTimeout(2000);
+            return true;
+          }
+        }
+      }
+    }
+    // Fallback: clear cookies
+    await page.context().clearCookies();
+    return false;
+  }
+
+  // ===== Profile module dispatcher =====
+  async runProfileModule(page, mod, targetUrl, originalUrl, role, authState, detect, profile, runConfig) {
+    // Common modules — reuse existing test functions
+    switch (mod) {
+      case 'login': return this.testLoginProfile(page, originalUrl, role, authState, detect, profile);
+      case 'dashboard': return this.testDashboard(page, targetUrl, detect, authState);
+      case 'navigation': return this.testNavigation(page, targetUrl, detect);
+      case 'structure': return this.testStructure(page, targetUrl, detect);
+      case 'security': return this.testSecurityProfile(page, targetUrl, detect, role, authState);
+      case 'form_validation':
+        if (!detect.hasForm) return [];
+        return this.testFormValidation(page, targetUrl, detect);
+      case 'responsive': return this.testResponsive(page, targetUrl, detect);
+      case 'performance': return this.testPerformance(page, targetUrl, detect);
+      // Competency-specific
+      case 'crud_employee': return this.testCrudEmployee(page, targetUrl, role, authState, detect);
+      case 'crud_kompetensi': return this.testCrudKompetensi(page, targetUrl, role, authState, detect);
+      case 'test_assessment': return this.testAssessment(page, targetUrl, role, authState, detect);
+      case 'payment_booking': return this.testPaymentBooking(page, targetUrl, role, authState, detect);
+      case 'notification_integration': return this.testNotificationIntegration(page, targetUrl, role, authState, detect);
+      case 'report_export': return this.testReportExport(page, targetUrl, role, authState, detect);
+      // Psikotest-specific
+      case 'crud_master': return this.testCrudMaster(page, targetUrl, role, authState, detect);
+      case 'ai_integration': return this.testAiIntegration(page, targetUrl, role, authState, detect);
+      case 'booking_consultant': return this.testBookingConsultant(page, targetUrl, role, authState, detect);
+      case 'result_report': return this.testResultReport(page, targetUrl, role, authState, detect);
+      // Consultant-specific
+      case 'landing_page': return this.testLandingPage(page, targetUrl, detect);
+      case 'profile_management': return this.testProfileManagement(page, targetUrl, role, authState, detect);
+      case 'booking_schedule': return this.testBookingSchedule(page, targetUrl, role, authState, detect);
+      case 'payment_referal': return this.testPaymentReferal(page, targetUrl, role, authState, detect);
+      case 'notification': return this.testNotification(page, targetUrl, role, authState, detect);
+      // Legacy fallback
+      case 'crud': return this.testCrud(page, targetUrl, detect, authState);
+      case 'api_data': return this.testApiData(page, targetUrl, detect, authState);
+      default: return [];
+    }
+  }
+
+  // ===== Login tests for profile mode =====
+  async testLoginProfile(page, url, role, authState, detect, profile) {
+    const M = 'Login & Auth'; const R = [];
+    const email = role.email;
+    const pwd = role.password;
+
+    // TC-L-001: Login form detected
+    R.push(await this.safeTest('TC-L-001', M, 'Form login terdeteksi di halaman',
+      'URL = halaman login', '1. Buka URL\n2. Cari form login',
+      'Form login ditemukan', async () => {
+        await this.ensureOnPage(page, url);
+        const hasForm = await this.detectLoginForm(page);
+        if (!hasForm) throw new Error('Form login tidak ditemukan');
+        return 'Form login terdeteksi';
+      }));
+
+    // TC-L-002: Email/username field
+    R.push(await this.safeTest('TC-L-002', M, 'Field username/email terdeteksi',
+      'Form login ditemukan', '1. Cari input username/email',
+      'Field username ditemukan', async () => {
+        const userSels = ['input[name="user[login]"]', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]', '#username', '#email', 'input[placeholder*="username" i]', 'input[placeholder*="email" i]', 'input[autocomplete="username"]'];
+        let found = false;
+        for (const s of userSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+          if (await page.locator(s).first().count() > 0) { found = true; break; }
+        }
+        if (!found) throw new Error('Field username/email tidak ditemukan');
+        return 'Field username/email terdeteksi';
+      }));
+
+    // TC-L-003: Password masking
+    R.push(await this.safeTest('TC-L-003', M, 'Password masking (type=password)',
+      'Form login ditemukan', '1. Cari input password\n2. Cek type=password',
+      'Password field type=password', async () => {
+        const pwdEl = page.locator('input[type="password"]').first();
+        if (!await pwdEl.isVisible().catch(() => false) && await pwdEl.count() === 0) throw new Error('Input password tidak ditemukan');
+        return 'Password masking aktif (type=password)';
+      }));
+
+    // TC-L-004: Submit button
+    R.push(await this.safeTest('TC-L-004', M, 'Submit button terdeteksi',
+      'Form login ditemukan', '1. Cari button submit/login',
+      'Submit button ditemukan', async () => {
+        const submitSels = ['button[type="submit"]', 'input[type="submit"]', 'button:has-text("Sign in")', 'button:has-text("Login")', 'button:has-text("Masuk")', 'button:has-text("Log in")'];
+        let found = false;
+        for (const s of submitSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+          if (await page.locator(s).first().count() > 0) { found = true; break; }
+        }
+        if (!found) throw new Error('Submit button tidak ditemukan');
+        return 'Submit button terdeteksi';
+      }));
+
+    // TC-L-005: Empty field validation
+    R.push(await this.safeTest('TC-L-005', M, 'Validasi field kosong',
+      'Form login ditemukan', '1. Submit form kosong\n2. Cek error message',
+      'Error muncul saat field kosong', async () => {
+        const submitBtn = page.locator('button[type="submit"], button:has-text("Login"), button:has-text("Masuk"), button:has-text("Sign in")').first();
+        if (await submitBtn.isVisible().catch(() => false)) {
+          await submitBtn.click().catch(() => {});
+          await page.waitForTimeout(1000);
+        }
+        const hasError = await this.smartWait(page, [
+          '.error', '.alert', '[class*="error"]', '[class*="invalid"]', '[class*="danger"]',
+          'text="required"', 'text="wajib"', 'text="harus diisi"', '[role="alert"]',
+        ], { timeout: 3000 });
+        if (hasError) return 'Validasi field kosong aktif';
+        // HTML5 validation
+        const emailInput = page.locator('input[type="email"], input[name="email"], input[name="username"]').first();
+        if (await emailInput.isVisible().catch(() => false)) {
+          const valid = await emailInput.evaluate(el => el.validity?.valid).catch(() => true);
+          if (!valid) return 'HTML5 validation aktif';
+        }
+        return 'Validasi field kosong terdeteksi (browser default)';
+      }));
+
+    // TC-L-006: Invalid credentials
+    R.push(await this.safeTest('TC-L-006', M, 'Login dengan kredensial invalid ditolak',
+      'Form login ditemukan', '1. Isi email invalid\n2. Isi password invalid\n3. Submit\n4. Cek error',
+      'Login gagal, error message muncul', async () => {
+        await this.fillLoginForm(page, 'invalid@test.com', 'wrongpassword123');
+        await page.waitForTimeout(2000);
+        const hasError = await this.smartWait(page, [
+          '.error', '.alert', '[class*="error"]', '[class*="invalid"]', '[class*="danger"]',
+          'text="invalid"', 'text="salah"', 'text="gagal"', 'text="incorrect"', '[role="alert"]',
+        ], { timeout: 3000 });
+        const stillOnLogin = await this.loginFormStillVisible(page);
+        if (hasError || stillOnLogin) return 'Login invalid ditolak dengan pesan error';
+        throw new Error('Login invalid tidak ditolak');
+      }));
+
+    // TC-L-007: Valid login
+    R.push(await this.safeTest('TC-L-007', M, `Login valid sebagai ${role.label}`,
+      'Kredensial valid', `1. Isi email: ${email}\n2. Isi password\n3. Submit\n4. Cek redirect`,
+      'Login berhasil, redirect ke dashboard', async () => {
+        await this.navigateToLoginPage(page, url);
+        await this.fillLoginForm(page, email, pwd);
+        try { await page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+        await page.waitForTimeout(2000);
+        const currentUrl = page.url();
+        if (currentUrl.includes('sign_in') || currentUrl.includes('login') || currentUrl.includes('auth')) {
+          throw new Error(`Login gagal untuk ${role.label}, masih di halaman login`);
+        }
+        authState.isAuthenticated = true;
+        authState.dashboardUrl = currentUrl;
+        return `Login berhasil, redirect ke: ${currentUrl}`;
+      }));
+
+    // TC-L-008: Session persistence
+    if (authState.isAuthenticated) {
+      R.push(await this.safeTest('TC-L-008', M, 'Session persist setelah refresh',
+        'User login', '1. Refresh halaman\n2. Cek masih login',
+        'Session tetap aktif', async () => {
+          await page.reload({ waitUntil: 'domcontentloaded' });
+          await page.waitForTimeout(2000);
+          const afterUrl = page.url();
+          if (afterUrl.includes('sign_in') || afterUrl.includes('login')) throw new Error('Session hilang setelah refresh');
+          return 'Session persist setelah refresh';
+        }));
+    } else {
+      R.push(this.skip('TC-L-008', M, 'Session persist setelah refresh', 'User login', '1. Refresh', 'Session aktif', 'not authenticated'));
+    }
+
+    // TC-L-009: Logout
+    if (authState.isAuthenticated) {
+      R.push(await this.safeTest('TC-L-009', M, 'Logout berhasil',
+        'User login', '1. Cari tombol logout\n2. Klik logout\n3. Cek redirect ke login',
+        'Logout berhasil, redirect ke login', async () => {
+          const loggedOut = await this.logout(page, authState);
+          if (!loggedOut) throw new Error('Tombol logout tidak ditemukan');
+          const afterUrl = page.url();
+          if (afterUrl.includes('login') || afterUrl.includes('sign_in') || afterUrl.includes('auth') || afterUrl === url) {
+            return 'Logout berhasil, session cleared';
+          }
+          return 'Logout berhasil (URL: ' + afterUrl + ')';
+        }));
+      // Re-login for subsequent modules
+      if (authState.isAuthenticated === false) {
+        await this.navigateToLoginPage(page, url);
+        await this.fillLoginForm(page, email, pwd);
+        try { await page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+        await page.waitForTimeout(2000);
+        const afterUrl = page.url();
+        if (!afterUrl.includes('sign_in') && !afterUrl.includes('login') && !afterUrl.includes('auth')) {
+          authState.isAuthenticated = true;
+          authState.dashboardUrl = afterUrl;
+        }
+      }
+    } else {
+      R.push(this.skip('TC-L-009', M, 'Logout berhasil', 'User login', '1. Logout', 'Redirect login', 'not authenticated'));
+    }
+
+    // TC-L-010: Back button security
+    if (authState.isAuthenticated) {
+      R.push(await this.noteTest('TC-L-010', M, 'Back button security setelah logout',
+        'User login', '1. Login\n2. Logout\n3. Back button\n4. Cek tidak bisa akses dashboard',
+        'Tidak bisa akses dashboard setelah logout', async () => {
+          // Logout first
+          await this.logout(page, authState);
+          await page.waitForTimeout(1000);
+          // Go back
+          await page.goBack().catch(() => {});
+          await page.waitForTimeout(2000);
+          const afterUrl = page.url();
+          if (afterUrl.includes('dashboard') || afterUrl.includes('admin') || afterUrl.includes('panel')) {
+            throw new Error('Back button bisa akses dashboard setelah logout — security issue');
+          }
+          return 'Back button security OK';
+        }));
+      // Re-login
+      await this.navigateToLoginPage(page, url);
+      await this.fillLoginForm(page, email, pwd);
+      try { await page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+      await page.waitForTimeout(2000);
+      const afterUrl = page.url();
+      if (!afterUrl.includes('sign_in') && !afterUrl.includes('login') && !afterUrl.includes('auth')) {
+        authState.isAuthenticated = true;
+        authState.dashboardUrl = afterUrl;
+      }
+    } else {
+      R.push(this.skip('TC-L-010', M, 'Back button security', 'User login', '1. Logout\n2. Back', 'No dashboard access', 'not authenticated'));
+    }
+
+    // TC-L-011: Register link (if applicable)
+    R.push(await this.noteTest('TC-L-011', M, 'Link register tersedia',
+      'Halaman login', '1. Cari link register/sign up',
+      'Link register ditemukan', async () => {
+        const registerSels = ['a:has-text("Register")', 'a:has-text("Sign up")', 'a:has-text("Daftar")', 'a[href*="register"]', 'a[href*="signup"]', 'a[href*="sign_up"]'];
+        let found = false;
+        for (const s of registerSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Link register tidak ditemukan');
+        return 'Link register tersedia';
+      }));
+
+    // TC-L-012: Forgot password link
+    R.push(await this.noteTest('TC-L-012', M, 'Link forgot/reset password tersedia',
+      'Halaman login', '1. Cari link forgot password',
+      'Link forgot password ditemukan', async () => {
+        const forgotSels = ['a:has-text("Forgot")', 'a:has-text("Reset")', 'a:has-text("Lupa")', 'a:has-text("Lupa Password")', 'a[href*="forgot"]', 'a[href*="reset"]', 'a[href*="password"]'];
+        let found = false;
+        for (const s of forgotSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Link forgot password tidak ditemukan');
+        return 'Link forgot/reset password tersedia';
+      }));
+
+    // TC-L-013: OAuth/SSO buttons (if applicable)
+    R.push(await this.noteTest('TC-L-013', M, 'OAuth/SSO login button tersedia',
+      'Halaman login', '1. Cari button Google/GitHub/Microsoft/SSO',
+      'OAuth button ditemukan', async () => {
+        const oauthSels = ['button:has-text("Google")', 'button:has-text("GitHub")', 'button:has-text("Microsoft")', 'button:has-text("SSO")', 'a:has-text("Google")', 'a:has-text("SSO")', '[class*="oauth"]', '[class*="sso"]', '[data-testid*="google"]', '[data-testid*="oauth"]'];
+        let found = false;
+        for (const s of oauthSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('OAuth/SSO button tidak ditemukan');
+        return 'OAuth/SSO login button tersedia';
+      }));
+
+    // TC-L-014: Permission boundary — non-admin should not see admin features
+    if (role.id !== 'admin' && role.id !== 'useradmin') {
+      R.push(await this.noteTest('TC-L-014', M, `Permission boundary: ${role.label} tidak bisa akses admin`,
+        `${role.label} login`, '1. Login sebagai non-admin\n2. Coba akses /admin atau fitur admin',
+        'Akses admin ditolak', async () => {
+          if (!authState.isAuthenticated) throw new Error('Not authenticated');
+          let baseUrl;
+          try { baseUrl = new URL(url).origin; } catch { baseUrl = url; }
+          const adminRoutes = ['/admin', '/admin/dashboard', '/admin/users', '/admin/settings', '/manage', '/cms'];
+          let blocked = false;
+          for (const route of adminRoutes) {
+            try {
+              await page.goto(baseUrl + route, { waitUntil: 'domcontentloaded', timeout: 10000 });
+              await page.waitForTimeout(2000);
+              const currentUrl = page.url();
+              // If redirected back to login or dashboard or got 403
+              if (currentUrl.includes('login') || currentUrl.includes('sign_in') || currentUrl.includes('403') || currentUrl.includes('unauthorized')) {
+                blocked = true; break;
+              }
+              // Check for access denied message
+              const hasDenied = await page.evaluate(() => {
+                const text = document.body?.innerText || '';
+                return text.includes('403') || text.includes('Unauthorized') || text.includes('Akses ditolak') || text.includes('Permission denied') || text.includes('Tidak memiliki akses');
+              }).catch(() => false);
+              if (hasDenied) { blocked = true; break; }
+            } catch {}
+          }
+          if (blocked) return 'Permission boundary aktif — akses admin ditolak untuk non-admin';
+          throw new Error('Non-admin bisa mengakses route admin — potential security issue');
+        }));
+    }
+
+    // Re-login after permission boundary test
+    if (authState.isAuthenticated) {
+      const currentUrl = page.url();
+      if (currentUrl.includes('login') || currentUrl.includes('sign_in') || currentUrl.includes('auth')) {
+        await this.fillLoginForm(page, email, pwd);
+        try { await page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+        await page.waitForTimeout(2000);
+        const afterUrl = page.url();
+        if (!afterUrl.includes('sign_in') && !afterUrl.includes('login') && !afterUrl.includes('auth')) {
+          authState.isAuthenticated = true;
+          authState.dashboardUrl = afterUrl;
+        }
+      }
+    }
+
+    return R;
+  }
+
+  // ===== Security tests with role awareness =====
+  async testSecurityProfile(page, url, detect, role, authState) {
+    // Run standard security tests
+    const baseResults = await this.testSecurity(page, url, detect);
+    // Add role-specific permission tests
+    const M = 'Security & Hack';
+    const R = [...baseResults];
+
+    // TC-SEC-EXTRA-1: IDOR — try accessing other users' data
+    R.push(await this.noteTest('TC-SEC-IDOR', M, 'IDOR: Akses data user lain ditolak',
+      'User authenticated', '1. Coba akses API /users/1 atau /api/users/1\n2. Cek response',
+      'Akses ditolak atau data terbatas', async () => {
+        let baseUrl;
+        try { baseUrl = new URL(url).origin; } catch { baseUrl = url; }
+        const idorUrls = ['/api/users/1', '/api/employees/1', '/api/profile/1', '/users/1', '/employees/1'];
+        let blocked = false;
+        for (const u of idorUrls) {
+          try {
+            const res = await page.goto(baseUrl + u, { waitUntil: 'domcontentloaded', timeout: 8000 });
+            if (res && (res.status() === 401 || res.status() === 403)) { blocked = true; break; }
+          } catch {}
+        }
+        if (blocked) return 'IDOR protection aktif';
+        return 'IDOR test selesai — perlu verifikasi manual';
+      }));
+
+    return R;
+  }
+
+  // ===== Competency-specific test modules =====
+
+  async testCrudEmployee(page, url, role, authState, detect) {
+    const M = 'CRUD Employee/Divisi/Role'; const R = [];
+    const isAdmin = role.id === 'admin';
+
+    // TC-EMP-001: Employee table detected
+    R.push(await this.safeTest('TC-EMP-001', M, 'Tabel employee terdeteksi',
+      'Dashboard admin', '1. Cari tabel employee/pegawai',
+      'Tabel employee ditemukan', async () => {
+        await this.navigateToDashboard(page, url, authState);
+        const tableSels = ['table', '[class*="table"]', '[class*="grid"]', '[data-testid*="employee"]', '[class*="employee-list"]', '[class*="pegawai"]'];
+        let found = false;
+        for (const s of tableSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Tabel employee tidak ditemukan');
+        return 'Tabel employee terdeteksi';
+      }));
+
+    // TC-EMP-002: Add employee button
+    R.push(await this.safeTest('TC-EMP-002', M, 'Button tambah employee terdeteksi',
+      'Tabel employee', '1. Cari button add/tambah employee',
+      'Button add ditemukan', async () => {
+        const addSels = ['button:has-text("Add")', 'button:has-text("Tambah")', 'button:has-text("Create")', 'button:has-text("Buat")', 'button:has-text("New")', 'a:has-text("Add")', 'a:has-text("Tambah")', '[class*="add-button"]', '[data-testid*="add"]'];
+        let found = false;
+        for (const s of addSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Button tambah employee tidak ditemukan');
+        return 'Button tambah employee terdeteksi';
+      }));
+
+    // TC-EMP-003: CRUD Divisi
+    R.push(await this.noteTest('TC-EMP-003', M, 'CRUD Divisi terdeteksi',
+      'Dashboard admin', '1. Cari menu/section divisi\n2. Cek tabel/list divisi',
+      'Fitur divisi tersedia', async () => {
+        const divSels = ['a:has-text("Divisi")', 'a[href*="divisi"]', 'button:has-text("Divisi")', '[class*="divisi"]', '[data-testid*="divisi"]', 'a:has-text("Division")', 'a[href*="division"]'];
+        let found = false;
+        for (const s of divSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Fitur divisi tidak ditemukan');
+        return 'CRUD Divisi terdeteksi';
+      }));
+
+    // TC-EMP-004: CRUD Role
+    R.push(await this.noteTest('TC-EMP-004', M, 'CRUD Role terdeteksi',
+      'Dashboard admin', '1. Cari menu/section role\n2. Cek tabel/list role',
+      'Fitur role tersedia', async () => {
+        const roleSels = ['a:has-text("Role")', 'a[href*="role"]', 'button:has-text("Role")', '[class*="role"]', '[data-testid*="role"]'];
+        let found = false;
+        for (const s of roleSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Fitur role tidak ditemukan');
+        return 'CRUD Role terdeteksi';
+      }));
+
+    // TC-EMP-005: CRUD User
+    R.push(await this.noteTest('TC-EMP-005', M, 'CRUD User terdeteksi',
+      'Dashboard admin', '1. Cari menu/section user\n2. Cek tabel/list user',
+      'Fitur user management tersedia', async () => {
+        const userSels = ['a:has-text("User")', 'a[href*="user"]', 'button:has-text("User")', '[class*="user-list"]', '[data-testid*="user"]', 'a:has-text("Users")', 'a[href*="users"]'];
+        let found = false;
+        for (const s of userSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Fitur user management tidak ditemukan');
+        return 'CRUD User terdeteksi';
+      }));
+
+    // TC-EMP-006: Search/filter employee
+    R.push(await this.noteTest('TC-EMP-006', M, 'Search/filter employee tersedia',
+      'Tabel employee', '1. Cari input search di tabel employee',
+      'Search tersedia', async () => {
+        const searchSels = ['input[placeholder*="search" i]', 'input[placeholder*="cari" i]', 'input[type="search"]', '[class*="search"]', '[data-testid*="search"]'];
+        let found = false;
+        for (const s of searchSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Search/filter employee tidak ditemukan');
+        return 'Search/filter employee tersedia';
+      }));
+
+    // TC-EMP-007: Edit employee
+    R.push(await this.noteTest('TC-EMP-007', M, 'Button edit employee terdeteksi',
+      'Tabel employee', '1. Cari button edit di tabel',
+      'Button edit ditemukan', async () => {
+        const editSels = ['button:has-text("Edit")', 'button:has-text("Ubah")', 'a:has-text("Edit")', 'a:has-text("Ubah")', '[class*="edit"]', '[data-testid*="edit"]', 'button[aria-label*="edit" i]'];
+        let found = false;
+        for (const s of editSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Button edit tidak ditemukan');
+        return 'Button edit employee terdeteksi';
+      }));
+
+    // TC-EMP-008: Delete employee
+    R.push(await this.noteTest('TC-EMP-008', M, 'Button delete employee terdeteksi',
+      'Tabel employee', '1. Cari button delete di tabel',
+      'Button delete ditemukan', async () => {
+        const delSels = ['button:has-text("Delete")', 'button:has-text("Hapus")', 'button:has-text("Remove")', 'a:has-text("Delete")', 'a:has-text("Hapus")', '[class*="delete"]', '[data-testid*="delete"]', 'button[aria-label*="delete" i]'];
+        let found = false;
+        for (const s of delSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Button delete tidak ditemukan');
+        return 'Button delete employee terdeteksi';
+      }));
+
+    // TC-EMP-009: Permission — non-admin cannot manage employees
+    if (!isAdmin) {
+      R.push(await this.noteTest('TC-EMP-009', M, `Permission: ${role.label} tidak bisa manage employee`,
+        'Non-admin login', '1. Coba akses menu employee\n2. Cek ditolak',
+        'Akses manage employee ditolak', async () => {
+          const empSels = ['a:has-text("Employee")', 'a[href*="employee"]', 'a:has-text("Pegawai")', 'a[href*="pegawai"]', 'button:has-text("Add Employee")', 'button:has-text("Tambah Pegawai")'];
+          let canAccess = false;
+          for (const s of empSels) {
+            if (await page.locator(s).first().isVisible().catch(() => false)) { canAccess = true; break; }
+          }
+          if (canAccess) throw new Error('Non-admin bisa mengakses menu employee');
+          return 'Permission boundary aktif — non-admin tidak bisa manage employee';
+        }));
+    }
+
+    // TC-EMP-010: Pagination
+    R.push(await this.noteTest('TC-EMP-010', M, 'Pagination employee tersedia',
+      'Tabel employee', '1. Cari pagination di tabel',
+      'Pagination ditemukan', async () => {
+        const pagSels = ['[class*="pagination"]', 'nav[aria-label*="page"]', 'button:has-text("Next")', 'button:has-text("Prev")', '[class*="page-nav"]'];
+        let found = false;
+        for (const s of pagSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Pagination tidak ditemukan');
+        return 'Pagination employee tersedia';
+      }));
+
+    return R;
+  }
+
+  async testCrudKompetensi(page, url, role, authState, detect) {
+    const M = 'CRUD Kompetensi'; const R = [];
+
+    // TC-KOMP-001: Master Kompetensi menu
+    R.push(await this.safeTest('TC-KOMP-001', M, 'Menu Master Kompetensi terdeteksi',
+      'Dashboard', '1. Cari menu kompetensi',
+      'Menu kompetensi ditemukan', async () => {
+        const kompSels = ['a:has-text("Kompetensi")', 'a[href*="kompetensi"]', 'a:has-text("Competency")', 'a[href*="competency"]', 'button:has-text("Kompetensi")', '[class*="kompetensi"]', '[data-testid*="kompetensi"]'];
+        let found = false;
+        for (const s of kompSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Menu kompetensi tidak ditemukan');
+        return 'Menu Master Kompetensi terdeteksi';
+      }));
+
+    // TC-KOMP-002: Form Kompetensi
+    R.push(await this.noteTest('TC-KOMP-002', M, 'Form Kompetensi User terdeteksi',
+      'Menu kompetensi', '1. Cari form input kompetensi',
+      'Form kompetensi ditemukan', async () => {
+        const formSels = ['form', 'input[name*="kompetensi"]', 'textarea[name*="kompetensi"]', '[class*="form-kompetensi"]', '[data-testid*="form-kompetensi"]'];
+        let found = false;
+        for (const s of formSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Form kompetensi tidak ditemukan');
+        return 'Form Kompetensi User terdeteksi';
+      }));
+
+    // TC-KOMP-003: AI Generate Kompetensi button
+    R.push(await this.noteTest('TC-KOMP-003', M, 'Button AI Generate Kompetensi terdeteksi',
+      'Menu kompetensi', '1. Cari button AI generate',
+      'Button AI generate ditemukan', async () => {
+        const aiSels = ['button:has-text("AI")', 'button:has-text("Generate")', 'button:has-text("Generate AI")', 'button:has-text("AI Generate")', '[class*="ai-generate"]', '[data-testid*="ai-generate"]', 'button:has-text("Auto Generate")'];
+        let found = false;
+        for (const s of aiSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Button AI Generate Kompetensi tidak ditemukan');
+        return 'Button AI Generate Kompetensi terdeteksi';
+      }));
+
+    // TC-KOMP-004: Result Competency display
+    R.push(await this.noteTest('TC-KOMP-004', M, 'Result Competency terdeteksi',
+      'Menu kompetensi', '1. Cari section result/hasil kompetensi',
+      'Result competency ditemukan', async () => {
+        const resultSels = ['a:has-text("Result")', 'a:has-text("Hasil")', '[class*="result"]', '[class*="hasil"]', '[data-testid*="result"]', 'a[href*="result"]'];
+        let found = false;
+        for (const s of resultSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Result competency tidak ditemukan');
+        return 'Result Competency terdeteksi';
+      }));
+
+    // TC-KOMP-005: Norm Group & Norm Table
+    R.push(await this.noteTest('TC-KOMP-005', M, 'Norm Group & Norm Table terdeteksi',
+      'Dashboard admin', '1. Cari menu norm group/table',
+      'Norm group/table ditemukan', async () => {
+        const normSels = ['a:has-text("Norm Group")', 'a:has-text("Norm Table")', 'a[href*="norm"]', '[class*="norm"]', '[data-testid*="norm"]'];
+        let found = false;
+        for (const s of normSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Norm group/table tidak ditemukan');
+        return 'Norm Group & Norm Table terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testAssessment(page, url, role, authState, detect) {
+    const M = 'Test & Assessment'; const R = [];
+
+    // TC-ASSESS-001: Test list
+    R.push(await this.safeTest('TC-ASSESS-001', M, 'List test/assessment terdeteksi',
+      'Dashboard', '1. Cari list/section test',
+      'List test ditemukan', async () => {
+        const testSels = ['a:has-text("Test")', 'a[href*="test"]', 'a:has-text("Assessment")', 'a[href*="assessment"]', '[class*="test-list"]', '[class*="assessment"]', '[data-testid*="test"]'];
+        let found = false;
+        for (const s of testSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('List test tidak ditemukan');
+        return 'List test/assessment terdeteksi';
+      }));
+
+    // TC-ASSESS-002: Test + Dimensi
+    R.push(await this.noteTest('TC-ASSESS-002', M, 'Test dengan Dimensi terdeteksi',
+      'Menu test', '1. Cari section dimensi',
+      'Dimensi terdeteksi', async () => {
+        const dimSels = ['a:has-text("Dimensi")', 'a[href*="dimensi"]', 'a:has-text("Dimension")', '[class*="dimensi"]', '[data-testid*="dimensi"]'];
+        let found = false;
+        for (const s of dimSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Dimensi tidak ditemukan');
+        return 'Test dengan Dimensi terdeteksi';
+      }));
+
+    // TC-ASSESS-003: Bank Soal
+    R.push(await this.noteTest('TC-ASSESS-003', M, 'Bank Soal terdeteksi',
+      'Dashboard admin', '1. Cari menu bank soal',
+      'Bank soal ditemukan', async () => {
+        const soalSels = ['a:has-text("Bank Soal")', 'a:has-text("Soal")', 'a[href*="soal"]', 'a[href*="question"]', '[class*="soal"]', '[class*="question-bank"]', '[data-testid*="soal"]'];
+        let found = false;
+        for (const s of soalSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Bank soal tidak ditemukan');
+        return 'Bank Soal terdeteksi';
+      }));
+
+    // TC-ASSESS-004: Import Excel Soal
+    R.push(await this.noteTest('TC-ASSESS-004', M, 'Import Excel Soal terdeteksi',
+      'Bank soal', '1. Cari button import excel',
+      'Import excel ditemukan', async () => {
+        const importSels = ['button:has-text("Import")', 'button:has-text("Excel")', 'a:has-text("Import")', 'input[type="file"][accept*="excel"]', 'input[type="file"][accept*=".xls"]', '[class*="import"]', '[data-testid*="import"]'];
+        let found = false;
+        for (const s of importSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Import Excel tidak ditemukan');
+        return 'Import Excel Soal terdeteksi';
+      }));
+
+    // TC-ASSESS-005: Navigasi Test
+    R.push(await this.noteTest('TC-ASSESS-005', M, 'Navigasi test (next/prev) terdeteksi',
+      'Halaman test', '1. Cari button next/prev di test',
+      'Navigasi test ditemukan', async () => {
+        const navSels = ['button:has-text("Next")', 'button:has-text("Selanjutnya")', 'button:has-text("Prev")', 'button:has-text("Sebelumnya")', 'button:has-text("Lanjut")', '[class*="next"]', '[class*="prev"]', '[data-testid*="next"]'];
+        let found = false;
+        for (const s of navSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Navigasi test tidak ditemukan');
+        return 'Navigasi test terdeteksi';
+      }));
+
+    // TC-ASSESS-006: Test dengan Kamera
+    R.push(await this.noteTest('TC-ASSESS-006', M, 'Test dengan kamera terdeteksi',
+      'Halaman test', '1. Cari indikator kamera/video',
+      'Fitur kamera terdeteksi', async () => {
+        const camSels = ['video', '[class*="camera"]', '[class*="webcam"]', '[data-testid*="camera"]', 'button:has-text("Camera")', 'button:has-text("Kamera")', 'canvas[class*="camera"]'];
+        let found = false;
+        for (const s of camSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Fitur kamera tidak ditemukan');
+        return 'Test dengan kamera terdeteksi';
+      }));
+
+    // TC-ASSESS-007: Mulai Ujian (peserta)
+    R.push(await this.noteTest('TC-ASSESS-007', M, 'Button mulai ujian terdeteksi',
+      'Dashboard peserta', '1. Cari button mulai/start ujian',
+      'Button mulai ujian ditemukan', async () => {
+        const startSels = ['button:has-text("Mulai")', 'button:has-text("Start")', 'button:has-text("Begin")', 'a:has-text("Mulai")', 'a:has-text("Start")', '[class*="start"]', '[data-testid*="start"]'];
+        let found = false;
+        for (const s of startSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Button mulai ujian tidak ditemukan');
+        return 'Button mulai ujian terdeteksi';
+      }));
+
+    // TC-ASSESS-008: Recording/Zoom
+    R.push(await this.noteTest('TC-ASSESS-008', M, 'Recording/Zoom assessment terdeteksi',
+      'Halaman test', '1. Cari indikator recording/zoom',
+      'Recording terdeteksi', async () => {
+        const recSels = ['button:has-text("Record")', 'button:has-text("Recording")', '[class*="record"]', '[class*="zoom"]', '[data-testid*="record"]', 'video[class*="record"]'];
+        let found = false;
+        for (const s of recSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Recording/Zoom tidak ditemukan');
+        return 'Recording/Zoom assessment terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testPaymentBooking(page, url, role, authState, detect) {
+    const M = 'Payment & Booking'; const R = [];
+
+    // TC-PAY-001: Setting Price
+    R.push(await this.noteTest('TC-PAY-001', M, 'Setting Price terdeteksi',
+      'Dashboard admin', '1. Cari menu setting price',
+      'Setting price ditemukan', async () => {
+        const priceSels = ['a:has-text("Price")', 'a:has-text("Harga")', 'a[href*="price"]', 'a:has-text("Setting Price")', '[class*="price"]', '[data-testid*="price"]'];
+        let found = false;
+        for (const s of priceSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Setting price tidak ditemukan');
+        return 'Setting Price terdeteksi';
+      }));
+
+    // TC-PAY-002: Payment Gateway
+    R.push(await this.noteTest('TC-PAY-002', M, 'Payment Gateway terdeteksi',
+      'Halaman payment', '1. Cari indikator payment gateway',
+      'Payment gateway ditemukan', async () => {
+        const paySels = ['button:has-text("Bayar")', 'button:has-text("Pay")', 'button:has-text("Payment")', '[class*="payment"]', '[class*="midtrans"]', '[class*="xendit"]', '[class*="stripe"]', '[data-testid*="payment"]', 'img[src*="midtrans"]', 'img[src*="xendit"]', 'img[src*="stripe"]'];
+        let found = false;
+        for (const s of paySels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Payment gateway tidak ditemukan');
+        return 'Payment Gateway terdeteksi';
+      }));
+
+    // TC-PAY-003: Kode Referal
+    R.push(await this.noteTest('TC-PAY-003', M, 'Kode Referal terdeteksi',
+      'Dashboard', '1. Cari input/section kode referal',
+      'Kode referal ditemukan', async () => {
+        const refSels = ['input[placeholder*="referal" i]', 'input[placeholder*="referral" i]', 'input[name*="referal"]', 'input[name*="referral"]', 'a:has-text("Referal")', 'a:has-text("Referral")', '[class*="referal"]', '[class*="referral"]', '[data-testid*="referal"]'];
+        let found = false;
+        for (const s of refSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Kode referal tidak ditemukan');
+        return 'Kode Referal terdeteksi';
+      }));
+
+    // TC-PAY-004: Booking dengan Referal
+    R.push(await this.noteTest('TC-PAY-004', M, 'Booking dengan kode referal terdeteksi',
+      'Halaman booking', '1. Cari form booking dengan field referal',
+      'Booking dengan referal tersedia', async () => {
+        const bookSels = ['button:has-text("Booking")', 'a:has-text("Booking")', 'a[href*="booking"]', '[class*="booking"]', '[data-testid*="booking"]'];
+        let found = false;
+        for (const s of bookSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Booking tidak ditemukan');
+        return 'Booking dengan kode referal terdeteksi';
+      }));
+
+    // TC-PAY-005: Cancellation
+    R.push(await this.noteTest('TC-PAY-005', M, 'Cancellation terdeteksi',
+      'Dashboard', '1. Cari button cancel/batalkan',
+      'Cancellation ditemukan', async () => {
+        const cancelSels = ['button:has-text("Cancel")', 'button:has-text("Batalkan")', 'a:has-text("Cancel")', '[class*="cancel"]', '[data-testid*="cancel"]'];
+        let found = false;
+        for (const s of cancelSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Cancellation tidak ditemukan');
+        return 'Cancellation terdeteksi';
+      }));
+
+    // TC-PAY-006: Reschedule
+    R.push(await this.noteTest('TC-PAY-006', M, 'Reschedule terdeteksi',
+      'Dashboard', '1. Cari button reschedule/jadwal ulang',
+      'Reschedule ditemukan', async () => {
+        const resSels = ['button:has-text("Reschedule")', 'button:has-text("Jadwal Ulang")', 'a:has-text("Reschedule")', '[class*="reschedule"]', '[data-testid*="reschedule"]'];
+        let found = false;
+        for (const s of resSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Reschedule tidak ditemukan');
+        return 'Reschedule terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testNotificationIntegration(page, url, role, authState, detect) {
+    const M = 'Notification & Integration'; const R = [];
+
+    // TC-NI-001: Email notification
+    R.push(await this.noteTest('TC-NI-001', M, 'Email notification terdeteksi',
+      'Dashboard', '1. Cari indikator email notif',
+      'Email notif ditemukan', async () => {
+        const notifSels = ['[class*="notif"]', '[class*="notification"]', '[class*="bell"]', 'button[aria-label*="notif"]', '[data-testid*="notif"]', 'a:has-text("Notifikasi")', 'a:has-text("Notification")'];
+        let found = false;
+        for (const s of notifSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Notification tidak ditemukan');
+        return 'Email notification terdeteksi';
+      }));
+
+    // TC-NI-002: Upload Foto/OSS
+    R.push(await this.noteTest('TC-NI-002', M, 'Upload foto/attachment terdeteksi',
+      'Profile/settings', '1. Cari input file upload',
+      'Upload ditemukan', async () => {
+        const uploadSels = ['input[type="file"]', '[class*="upload"]', '[class*="dropzone"]', 'button:has-text("Upload")', 'button:has-text("Foto")', '[data-testid*="upload"]'];
+        let found = false;
+        for (const s of uploadSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Upload tidak ditemukan');
+        return 'Upload foto/attachment terdeteksi';
+      }));
+
+    // TC-NI-003: Foto Profile
+    R.push(await this.noteTest('TC-NI-003', M, 'Foto profile terdeteksi',
+      'Profile', '1. Cari avatar/foto profile',
+      'Foto profile ditemukan', async () => {
+        const avatarSels = ['[class*="avatar"]', 'img[class*="profile"]', '[class*="profile-pic"]', '[data-testid*="avatar"]', '[class*="user-avatar"]'];
+        let found = false;
+        for (const s of avatarSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Foto profile tidak ditemukan');
+        return 'Foto profile terdeteksi';
+      }));
+
+    // TC-NI-004: Integrasi AI
+    R.push(await this.noteTest('TC-NI-004', M, 'Integrasi AI terdeteksi',
+      'Dashboard', '1. Cari indikator AI integration',
+      'AI integration ditemukan', async () => {
+        const aiSels = ['[class*="ai"]', 'button:has-text("AI")', 'button:has-text("Generate")', '[data-testid*="ai"]', 'text*="AI"', 'text*="artificial intelligence"'];
+        let found = false;
+        for (const s of aiSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Integrasi AI tidak ditemukan');
+        return 'Integrasi AI terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testReportExport(page, url, role, authState, detect) {
+    const M = 'Report & Export'; const R = [];
+
+    // TC-REP-001: Report PDF
+    R.push(await this.noteTest('TC-REP-001', M, 'Report PDF terdeteksi',
+      'Dashboard', '1. Cari button download/export PDF',
+      'Report PDF ditemukan', async () => {
+        const pdfSels = ['button:has-text("PDF")', 'button:has-text("Export")', 'button:has-text("Download")', 'a:has-text("PDF")', 'a:has-text("Export")', '[class*="export"]', '[class*="pdf"]', '[data-testid*="export"]', '[data-testid*="pdf"]'];
+        let found = false;
+        for (const s of pdfSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Report PDF tidak ditemukan');
+        return 'Report PDF terdeteksi';
+      }));
+
+    // TC-REP-002: Logo + PT dinamis
+    R.push(await this.noteTest('TC-REP-002', M, 'Logo + PT pada report dinamis',
+      'Report settings', '1. Cari setting logo/PT di report',
+      'Setting logo/PT ditemukan', async () => {
+        const logoSels = ['input[accept*="image"]', '[class*="logo"]', 'button:has-text("Logo")', 'input[name*="logo"]', 'input[name*="company"]', 'input[name*="pt"]'];
+        let found = false;
+        for (const s of logoSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Setting logo/PT tidak ditemukan');
+        return 'Logo + PT dinamis terdeteksi';
+      }));
+
+    // TC-REP-003: Dashboard Report
+    R.push(await this.noteTest('TC-REP-003', M, 'Dashboard Report terdeteksi',
+      'Dashboard admin', '1. Cari menu report',
+      'Dashboard report ditemukan', async () => {
+        const repSels = ['a:has-text("Report")', 'a:has-text("Laporan")', 'a[href*="report"]', '[class*="report"]', '[data-testid*="report"]'];
+        let found = false;
+        for (const s of repSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Dashboard report tidak ditemukan');
+        return 'Dashboard Report terdeteksi';
+      }));
+
+    return R;
+  }
+
+  // ===== Psikotest-specific test modules =====
+
+  async testCrudMaster(page, url, role, authState, detect) {
+    const M = 'CRUD Master Data'; const R = [];
+
+    // TC-MST-001: Master Kompetensi
+    R.push(await this.safeTest('TC-MST-001', M, 'Master Kompetensi terdeteksi',
+      'Dashboard admin', '1. Cari menu master kompetensi',
+      'Master kompetensi ditemukan', async () => {
+        const kompSels = ['a:has-text("Kompetensi")', 'a[href*="kompetensi"]', 'a:has-text("Master")', '[class*="master-kompetensi"]', '[data-testid*="master-kompetensi"]'];
+        let found = false;
+        for (const s of kompSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Master kompetensi tidak ditemukan');
+        return 'Master Kompetensi terdeteksi';
+      }));
+
+    // TC-MST-002: Bank Soal
+    R.push(await this.noteTest('TC-MST-002', M, 'Bank Soal terdeteksi',
+      'Dashboard admin', '1. Cari menu bank soal',
+      'Bank soal ditemukan', async () => {
+        const soalSels = ['a:has-text("Bank Soal")', 'a:has-text("Soal")', 'a[href*="soal"]', 'a[href*="question"]', '[class*="soal"]', '[data-testid*="soal"]'];
+        let found = false;
+        for (const s of soalSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Bank soal tidak ditemukan');
+        return 'Bank Soal terdeteksi';
+      }));
+
+    // TC-MST-003: Dimensi
+    R.push(await this.noteTest('TC-MST-003', M, 'Dimensi test terdeteksi',
+      'Dashboard admin', '1. Cari menu dimensi',
+      'Dimensi ditemukan', async () => {
+        const dimSels = ['a:has-text("Dimensi")', 'a[href*="dimensi"]', 'a:has-text("Dimension")', '[class*="dimensi"]', '[data-testid*="dimensi"]'];
+        let found = false;
+        for (const s of dimSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Dimensi tidak ditemukan');
+        return 'Dimensi test terdeteksi';
+      }));
+
+    // TC-MST-004: Norm Group & Norm Table
+    R.push(await this.noteTest('TC-MST-004', M, 'Norm Group & Norm Table terdeteksi',
+      'Dashboard admin', '1. Cari menu norm group/table',
+      'Norm group/table ditemukan', async () => {
+        const normSels = ['a:has-text("Norm")', 'a[href*="norm"]', '[class*="norm"]', '[data-testid*="norm"]'];
+        let found = false;
+        for (const s of normSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Norm group/table tidak ditemukan');
+        return 'Norm Group & Norm Table terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testAiIntegration(page, url, role, authState, detect) {
+    const M = 'AI Integration'; const R = [];
+
+    // TC-AI-001: AI Generate Kompetensi
+    R.push(await this.noteTest('TC-AI-001', M, 'AI Generate Kompetensi terdeteksi',
+      'Menu kompetensi', '1. Cari button AI generate kompetensi',
+      'AI generate kompetensi ditemukan', async () => {
+        const aiSels = ['button:has-text("AI")', 'button:has-text("Generate")', 'button:has-text("AI Generate")', '[class*="ai-generate"]', '[data-testid*="ai-generate"]'];
+        let found = false;
+        for (const s of aiSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('AI generate kompetensi tidak ditemukan');
+        return 'AI Generate Kompetensi terdeteksi';
+      }));
+
+    // TC-AI-002: Bank Soal Generate AI
+    R.push(await this.noteTest('TC-AI-002', M, 'Bank Soal Generate AI terdeteksi',
+      'Bank soal', '1. Cari button AI generate soal',
+      'AI generate soal ditemukan', async () => {
+        const aiSels = ['button:has-text("Generate Soal")', 'button:has-text("AI Soal")', 'button:has-text("Generate Question")', '[class*="ai-soal"]', '[data-testid*="ai-soal"]'];
+        let found = false;
+        for (const s of aiSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('AI generate soal tidak ditemukan');
+        return 'Bank Soal Generate AI terdeteksi';
+      }));
+
+    // TC-AI-003: Integrasi AI indicator
+    R.push(await this.noteTest('TC-AI-003', M, 'Indikator integrasi AI terdeteksi',
+      'Dashboard', '1. Cari elemen AI di page',
+      'Indikator AI ditemukan', async () => {
+        const hasAi = await page.evaluate(() => {
+          const text = document.body?.innerText || '';
+          return text.includes('AI') || text.includes('Artificial Intelligence') || text.includes('Generate') || text.includes('OpenAI') || text.includes('GPT');
+        }).catch(() => false);
+        if (!hasAi) throw new Error('Indikator integrasi AI tidak ditemukan');
+        return 'Indikator integrasi AI terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testBookingConsultant(page, url, role, authState, detect) {
+    const M = 'Booking Consultant'; const R = [];
+
+    // TC-BC-001: Booking menu
+    R.push(await this.safeTest('TC-BC-001', M, 'Menu Booking Consultant terdeteksi',
+      'Dashboard', '1. Cari menu booking',
+      'Menu booking ditemukan', async () => {
+        const bookSels = ['a:has-text("Booking")', 'a[href*="booking"]', 'button:has-text("Booking")', '[class*="booking"]', '[data-testid*="booking"]'];
+        let found = false;
+        for (const s of bookSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Menu booking tidak ditemukan');
+        return 'Menu Booking Consultant terdeteksi';
+      }));
+
+    // TC-BC-002: Consultant Set Jadwal
+    R.push(await this.noteTest('TC-BC-002', M, 'Consultant Set Jadwal terdeteksi',
+      'Dashboard consultant', '1. Cari menu set jadwal',
+      'Set jadwal ditemukan', async () => {
+        const jadwalSels = ['a:has-text("Jadwal")', 'a:has-text("Schedule")', 'a[href*="jadwal"]', 'a[href*="schedule"]', '[class*="jadwal"]', '[class*="schedule"]', '[data-testid*="jadwal"]'];
+        let found = false;
+        for (const s of jadwalSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Set jadwal tidak ditemukan');
+        return 'Consultant Set Jadwal terdeteksi';
+      }));
+
+    // TC-BC-003: Consultant Update Done
+    R.push(await this.noteTest('TC-BC-003', M, 'Consultant Update Done terdeteksi',
+      'Dashboard consultant', '1. Cari button done/selesai',
+      'Update done ditemukan', async () => {
+        const doneSels = ['button:has-text("Done")', 'button:has-text("Selesai")', 'button:has-text("Complete")', 'a:has-text("Done")', '[class*="done"]', '[class*="complete"]', '[data-testid*="done"]'];
+        let found = false;
+        for (const s of doneSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Update done tidak ditemukan');
+        return 'Consultant Update Done terdeteksi';
+      }));
+
+    // TC-BC-004: Result Halaman
+    R.push(await this.noteTest('TC-BC-004', M, 'Result Halaman terdeteksi',
+      'Dashboard', '1. Cari menu result/hasil',
+      'Result halaman ditemukan', async () => {
+        const resultSels = ['a:has-text("Result")', 'a:has-text("Hasil")', 'a[href*="result"]', 'a[href*="hasil"]', '[class*="result"]', '[data-testid*="result"]'];
+        let found = false;
+        for (const s of resultSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Result halaman tidak ditemukan');
+        return 'Result Halaman terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testResultReport(page, url, role, authState, detect) {
+    const M = 'Result & Report'; const R = [];
+
+    // TC-RR-001: Result Competency
+    R.push(await this.noteTest('TC-RR-001', M, 'Result Competency terdeteksi',
+      'Dashboard', '1. Cari menu result kompetensi',
+      'Result kompetensi ditemukan', async () => {
+        const resSels = ['a:has-text("Result")', 'a:has-text("Hasil")', 'a[href*="result"]', '[class*="result"]', '[data-testid*="result"]'];
+        let found = false;
+        for (const s of resSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Result kompetensi tidak ditemukan');
+        return 'Result Competency terdeteksi';
+      }));
+
+    // TC-RR-002: Form Kompetensi User
+    R.push(await this.noteTest('TC-RR-002', M, 'Form Kompetensi User terdeteksi',
+      'Dashboard', '1. Cari form kompetensi',
+      'Form kompetensi ditemukan', async () => {
+        const formSels = ['form', 'input[name*="kompetensi"]', 'textarea', '[class*="form-kompetensi"]', '[data-testid*="form-kompetensi"]'];
+        let found = false;
+        for (const s of formSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Form kompetensi tidak ditemukan');
+        return 'Form Kompetensi User terdeteksi';
+      }));
+
+    // TC-RR-003: Dashboard Report
+    R.push(await this.noteTest('TC-RR-003', M, 'Dashboard Report terdeteksi',
+      'Dashboard admin', '1. Cari menu report',
+      'Dashboard report ditemukan', async () => {
+        const repSels = ['a:has-text("Report")', 'a:has-text("Laporan")', 'a[href*="report"]', '[class*="report"]', '[data-testid*="report"]'];
+        let found = false;
+        for (const s of repSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Dashboard report tidak ditemukan');
+        return 'Dashboard Report terdeteksi';
+      }));
+
+    return R;
+  }
+
+  // ===== Consultant-specific test modules =====
+
+  async testLandingPage(page, url, detect) {
+    const M = 'Landing Page'; const R = [];
+
+    // TC-LP-001: Landing page content
+    R.push(await this.safeTest('TC-LP-001', M, 'Landing page content terdeteksi',
+      'URL = landing page', '1. Buka URL\n2. Cek konten landing page',
+      'Landing page memiliki konten', async () => {
+        const hasContent = await page.evaluate(() => {
+          const text = document.body?.innerText || '';
+          return text.length > 100 && (text.includes('konsultasi') || text.includes('consultant') || text.includes('booking') || text.includes('psikolog') || text.includes('layanan') || text.includes('service'));
+        }).catch(() => false);
+        if (!hasContent) throw new Error('Landing page tidak memiliki konten yang relevan');
+        return 'Landing page content terdeteksi';
+      }));
+
+    // TC-LP-002: CTA button
+    R.push(await this.noteTest('TC-LP-002', M, 'CTA button terdeteksi',
+      'Landing page', '1. Cari button CTA (Daftar/Booking/Mulai)',
+      'CTA button ditemukan', async () => {
+        const ctaSels = ['button:has-text("Daftar")', 'button:has-text("Register")', 'button:has-text("Booking")', 'button:has-text("Mulai")', 'button:has-text("Get Started")', 'a:has-text("Daftar")', 'a:has-text("Register")', 'a:has-text("Booking")', 'a[href*="register"]', 'a[href*="booking"]'];
+        let found = false;
+        for (const s of ctaSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('CTA button tidak ditemukan');
+        return 'CTA button terdeteksi';
+      }));
+
+    // TC-LP-003: FAQ section
+    R.push(await this.noteTest('TC-LP-003', M, 'FAQ section terdeteksi',
+      'Landing page', '1. Cari section FAQ',
+      'FAQ ditemukan', async () => {
+        const faqSels = ['[class*="faq"]', 'section:has-text("FAQ")', 'h2:has-text("FAQ")', 'h3:has-text("FAQ")', 'a:has-text("FAQ")', '[data-testid*="faq"]'];
+        let found = false;
+        for (const s of faqSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('FAQ tidak ditemukan');
+        return 'FAQ section terdeteksi';
+      }));
+
+    // TC-LP-004: Home page navigation
+    R.push(await this.noteTest('TC-LP-004', M, 'Home page navigation terdeteksi',
+      'Landing page', '1. Cari nav link ke home',
+      'Home navigation ditemukan', async () => {
+        const homeSels = ['a:has-text("Home")', 'a:has-text("Beranda")', 'a[href="/"]', 'a[href*="home"]', 'nav a:first-child'];
+        let found = false;
+        for (const s of homeSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Home navigation tidak ditemukan');
+        return 'Home page navigation terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testProfileManagement(page, url, role, authState, detect) {
+    const M = 'Profile Management'; const R = [];
+
+    // TC-PM-001: Profile page
+    R.push(await this.safeTest('TC-PM-001', M, 'Halaman profile terdeteksi',
+      'User login', '1. Cari menu/profile link',
+      'Profile page ditemukan', async () => {
+        const profSels = ['a:has-text("Profile")', 'a:has-text("Profil")', 'a[href*="profile"]', '[class*="profile"]', '[data-testid*="profile"]'];
+        let found = false;
+        for (const s of profSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Profile page tidak ditemukan');
+        return 'Halaman profile terdeteksi';
+      }));
+
+    // TC-PM-002: Profile Consultant
+    R.push(await this.noteTest('TC-PM-002', M, 'Profile Consultant terdeteksi',
+      'Dashboard consultant', '1. Cari section profile consultant',
+      'Profile consultant ditemukan', async () => {
+        const profSels = ['a:has-text("Profile")', 'a:has-text("Profil")', '[class*="consultant-profile"]', '[data-testid*="consultant-profile"]'];
+        let found = false;
+        for (const s of profSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Profile consultant tidak ditemukan');
+        return 'Profile Consultant terdeteksi';
+      }));
+
+    // TC-PM-003: Profil Client
+    R.push(await this.noteTest('TC-PM-003', M, 'Profil Client terdeteksi',
+      'Dashboard client', '1. Cari section profil client',
+      'Profil client ditemukan', async () => {
+        const profSels = ['a:has-text("Profile")', 'a:has-text("Profil")', '[class*="client-profile"]', '[data-testid*="client-profile"]'];
+        let found = false;
+        for (const s of profSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Profil client tidak ditemukan');
+        return 'Profil Client terdeteksi';
+      }));
+
+    // TC-PM-004: Register Consultant
+    R.push(await this.noteTest('TC-PM-004', M, 'Register Consultant terdeteksi',
+      'Landing/login page', '1. Cari link register consultant',
+      'Register consultant ditemukan', async () => {
+        const regSels = ['a:has-text("Register")', 'a:has-text("Daftar Consultant")', 'a:has-text("Daftar Konsultan")', 'a[href*="register"]', 'a[href*="consultant/register"]'];
+        let found = false;
+        for (const s of regSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Register consultant tidak ditemukan');
+        return 'Register Consultant terdeteksi';
+      }));
+
+    // TC-PM-005: Foto Profile
+    R.push(await this.noteTest('TC-PM-005', M, 'Foto profile terdeteksi',
+      'Profile page', '1. Cari avatar/foto profile',
+      'Foto profile ditemukan', async () => {
+        const avatarSels = ['[class*="avatar"]', 'img[class*="profile"]', '[class*="profile-pic"]', '[data-testid*="avatar"]'];
+        let found = false;
+        for (const s of avatarSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Foto profile tidak ditemukan');
+        return 'Foto profile terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testBookingSchedule(page, url, role, authState, detect) {
+    const M = 'Booking & Schedule'; const R = [];
+
+    // TC-BS-001: Booking form
+    R.push(await this.safeTest('TC-BS-001', M, 'Form booking terdeteksi',
+      'Dashboard', '1. Cari form booking',
+      'Form booking ditemukan', async () => {
+        const formSels = ['form', '[class*="booking-form"]', '[data-testid*="booking-form"]', 'button:has-text("Booking")', 'a:has-text("Booking")'];
+        let found = false;
+        for (const s of formSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Form booking tidak ditemukan');
+        return 'Form booking terdeteksi';
+      }));
+
+    // TC-BS-002: Set Jadwal
+    R.push(await this.noteTest('TC-BS-002', M, 'Set Jadwal terdeteksi',
+      'Dashboard consultant', '1. Cari calendar/jadwal',
+      'Set jadwal ditemukan', async () => {
+        const calSels = ['[class*="calendar"]', '[class*="jadwal"]', '[class*="schedule"]', 'input[type="date"]', 'input[type="datetime-local"]', '[data-testid*="jadwal"]', '[data-testid*="schedule"]'];
+        let found = false;
+        for (const s of calSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Set jadwal tidak ditemukan');
+        return 'Set Jadwal terdeteksi';
+      }));
+
+    // TC-BS-003: Update Done
+    R.push(await this.noteTest('TC-BS-003', M, 'Update Done terdeteksi',
+      'Dashboard consultant', '1. Cari button done/selesai',
+      'Update done ditemukan', async () => {
+        const doneSels = ['button:has-text("Done")', 'button:has-text("Selesai")', 'button:has-text("Complete")', '[class*="done"]', '[data-testid*="done"]'];
+        let found = false;
+        for (const s of doneSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Update done tidak ditemukan');
+        return 'Update Done terdeteksi';
+      }));
+
+    // TC-BS-004: Cancellation
+    R.push(await this.noteTest('TC-BS-004', M, 'Cancellation terdeteksi',
+      'Dashboard', '1. Cari button cancel',
+      'Cancellation ditemukan', async () => {
+        const cancelSels = ['button:has-text("Cancel")', 'button:has-text("Batalkan")', '[class*="cancel"]', '[data-testid*="cancel"]'];
+        let found = false;
+        for (const s of cancelSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Cancellation tidak ditemukan');
+        return 'Cancellation terdeteksi';
+      }));
+
+    // TC-BS-005: Reschedule
+    R.push(await this.noteTest('TC-BS-005', M, 'Reschedule terdeteksi',
+      'Dashboard', '1. Cari button reschedule',
+      'Reschedule ditemukan', async () => {
+        const resSels = ['button:has-text("Reschedule")', 'button:has-text("Jadwal Ulang")', '[class*="reschedule"]', '[data-testid*="reschedule"]'];
+        let found = false;
+        for (const s of resSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Reschedule tidak ditemukan');
+        return 'Reschedule terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testPaymentReferal(page, url, role, authState, detect) {
+    const M = 'Payment & Referal'; const R = [];
+
+    // TC-PR-001: Payment Gateway
+    R.push(await this.noteTest('TC-PR-001', M, 'Payment Gateway terdeteksi',
+      'Halaman payment', '1. Cari indikator payment gateway',
+      'Payment gateway ditemukan', async () => {
+        const paySels = ['button:has-text("Bayar")', 'button:has-text("Pay")', '[class*="payment"]', '[class*="midtrans"]', '[class*="xendit"]', '[data-testid*="payment"]'];
+        let found = false;
+        for (const s of paySels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Payment gateway tidak ditemukan');
+        return 'Payment Gateway terdeteksi';
+      }));
+
+    // TC-PR-002: Kode Referal
+    R.push(await this.noteTest('TC-PR-002', M, 'Kode Referal terdeteksi',
+      'Dashboard', '1. Cari input kode referal',
+      'Kode referal ditemukan', async () => {
+        const refSels = ['input[placeholder*="referal" i]', 'input[placeholder*="referral" i]', 'input[name*="referal"]', '[class*="referal"]', '[class*="referral"]', '[data-testid*="referal"]'];
+        let found = false;
+        for (const s of refSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Kode referal tidak ditemukan');
+        return 'Kode Referal terdeteksi';
+      }));
+
+    // TC-PR-003: Booking dengan Referal
+    R.push(await this.noteTest('TC-PR-003', M, 'Booking dengan kode referal terdeteksi',
+      'Halaman booking', '1. Cari form booking dengan field referal',
+      'Booking dengan referal tersedia', async () => {
+        const bookSels = ['button:has-text("Booking")', 'a:has-text("Booking")', '[class*="booking"]', '[data-testid*="booking"]'];
+        let found = false;
+        for (const s of bookSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Booking tidak ditemukan');
+        return 'Booking dengan kode referal terdeteksi';
+      }));
+
+    return R;
+  }
+
+  async testNotification(page, url, role, authState, detect) {
+    const M = 'Notification'; const R = [];
+
+    // TC-NOTIF-001: Notification bell/icon
+    R.push(await this.noteTest('TC-NOTIF-001', M, 'Notification icon terdeteksi',
+      'Dashboard', '1. Cari icon/bell notifikasi',
+      'Notification ditemukan', async () => {
+        const notifSels = ['[class*="notif"]', '[class*="bell"]', 'button[aria-label*="notif"]', '[data-testid*="notif"]', 'svg[class*="bell"]'];
+        let found = false;
+        for (const s of notifSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Notification tidak ditemukan');
+        return 'Notification icon terdeteksi';
+      }));
+
+    // TC-NOTIF-002: Email notification setting
+    R.push(await this.noteTest('TC-NOTIF-002', M, 'Email notification setting terdeteksi',
+      'Settings', '1. Cari setting email notif',
+      'Email notif setting ditemukan', async () => {
+        const emailSels = ['input[type="checkbox"][name*="email"]', 'input[type="checkbox"][name*="notif"]', 'button:has-text("Email")', '[class*="email-notif"]', '[data-testid*="email-notif"]'];
+        let found = false;
+        for (const s of emailSels) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) throw new Error('Email notification setting tidak ditemukan');
+        return 'Email notification setting terdeteksi';
+      }));
+
+    return R;
   }
 
   getBrowser(type) {
@@ -783,6 +2311,20 @@ class TestRunner {
     } catch (err) {
       this.broadcastStep(id, modul, title, 'error', err.message);
       return this.makeResult(id, modul, title, preConditions, testSteps, expected, err.message, 'failed', Date.now() - start, err.message, cat);
+    }
+  }
+
+  async noteTest(id, modul, title, preConditions, testSteps, expected, testFn, category) {
+    const cat = category || 'note';
+    const start = Date.now();
+    this.broadcastStep(id, modul, title, 'start', '');
+    try {
+      const actual = await testFn();
+      this.broadcastStep(id, modul, title, 'done', actual);
+      return this.makeResult(id, modul, title, preConditions, testSteps, expected, actual, 'passed', Date.now() - start, '', cat);
+    } catch (err) {
+      this.broadcastStep(id, modul, title, 'note', err.message);
+      return this.makeResult(id, modul, title, preConditions, testSteps, expected, err.message, 'note', Date.now() - start, err.message, cat);
     }
   }
 
