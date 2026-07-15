@@ -143,10 +143,14 @@ class TestRunner {
       });
       const seenNetErrors = new Set();
       page.on('requestfailed', (req) => {
-        const key = req.url() + '|' + req.method();
+        const reqUrl = req.url();
+        const failure = req.failure()?.errorText || 'unknown';
+        // Filter RSC (React Server Components) aborted requests — normal for SPA navigation
+        if (failure === 'net::ERR_ABORTED' && reqUrl.includes('_rsc=')) return;
+        const key = reqUrl + '|' + req.method();
         if (seenNetErrors.has(key)) return;
         seenNetErrors.add(key);
-        this.networkErrors.push({ url: req.url(), method: req.method(), failure: req.failure()?.errorText || 'unknown', time: Date.now() });
+        this.networkErrors.push({ url: reqUrl, method: req.method(), failure, time: Date.now() });
       });
       page.on('response', (res) => {
         if (res.status() >= 400) {
@@ -284,20 +288,23 @@ class TestRunner {
       }
 
       if (this.networkErrors && this.networkErrors.length > 0) {
-        const failedReqs = this.networkErrors.filter(e => e.status);
-        const netDetails = this.networkErrors.slice(0, 10).map(e => e.status ? `[${e.status}] ${e.method} ${e.url}` : `[FAIL] ${e.method} ${e.url}: ${e.failure}`).join('\n');
-        results.push({
-          testId: 'TC-P-009', module: 'Performance & Network',
-          title: `Network errors detected (${this.networkErrors.length} issues)`,
-          precondition: 'All network requests monitored during test',
-          steps: '1. Monitor all HTTP requests and responses\n2. Flag 4xx/5xx responses and failed requests',
-          expected: 'No network errors',
-          actual: `${this.networkErrors.length} network issues:\n${netDetails}`,
-          status: this.networkErrors.some(e => (e.status && e.status >= 400) || e.failure) ? 'failed' : 'passed',
-          category: 'primary',
-          duration: 0,
-        });
-        runConfig.results.push(results[results.length - 1]);
+        // Filter RSC aborted requests (normal for SPA navigation)
+        const realErrors = this.networkErrors.filter(e => !(e.failure === 'net::ERR_ABORTED' && e.url && e.url.includes('_rsc=')));
+        if (realErrors.length > 0) {
+          const netDetails = realErrors.slice(0, 10).map(e => e.status ? `[${e.status}] ${e.method} ${e.url}` : `[FAIL] ${e.method} ${e.url}: ${e.failure}`).join('\n');
+          results.push({
+            testId: 'TC-P-009', module: 'Performance & Network',
+            title: `Network errors detected (${realErrors.length} issues)`,
+            precondition: 'All network requests monitored during test',
+            steps: '1. Monitor all HTTP requests and responses\n2. Flag 4xx/5xx responses and failed requests',
+            expected: 'No network errors',
+            actual: `${realErrors.length} network issues:\n${netDetails}`,
+            status: realErrors.some(e => (e.status && e.status >= 400) || (e.failure && e.failure !== 'net::ERR_ABORTED')) ? 'failed' : 'passed',
+            category: 'primary',
+            duration: 0,
+          });
+          runConfig.results.push(results[results.length - 1]);
+        }
       }
 
       runConfig.progress = 100;
@@ -518,6 +525,9 @@ class TestRunner {
   }
 
   async detectLoginForm(page) {
+    // Wait for SPA hydration before checking
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
+    await page.waitForTimeout(2000);
     const sels = [
       'input[type="password"]',
       'form[action*="sign_in"]', 'form[action*="login"]', 'form[action*="auth"]',
@@ -525,13 +535,63 @@ class TestRunner {
       'input[name="user[login]"]', 'input[name="username"]', 'input[name="email"]', 'input[name="password"]',
       'input[id*="password"]', 'input[placeholder*="password" i]',
       'input[autocomplete="current-password"]', 'input[autocomplete="username"]',
+      'input[autocomplete="email"]',
       '[class*="login-form"]', '[class*="auth-form"]', '[data-testid*="login"]',
       'button:has-text("Sign in")', 'button:has-text("Login")', 'button:has-text("Masuk")', 'button:has-text("Log in")',
       'a:has-text("Sign in")', 'a:has-text("Login")', 'a:has-text("Log in")',
+      '[role="form"][class*="login" i]', 'div[class*="login-form" i]', 'div[class*="auth-form" i]',
     ];
     for (const s of sels) {
       if (await page.locator(s).count() > 0) return true;
     }
+    // Last resort: wait for password input with timeout
+    try {
+      await page.waitForSelector('input[type="password"]', { timeout: 8000, state: 'attached' });
+      return true;
+    } catch { return false; }
+  }
+
+  // Navigate to login page — try URL, then /login, /auth, /sign_in, then click Login/Masuk link
+  async navigateToLoginPage(page, url) {
+    // Strategy 1: Check if current page already has a password input
+    if (await page.locator('input[type="password"]').first().isVisible().catch(() => false)) return true;
+
+    // Strategy 2: Try common login routes
+    const baseUrl = new URL(url).origin;
+    const loginRoutes = ['/login', '/auth', '/sign_in', '/signin', '/masuk', '/admin/login', '/users/sign_in'];
+    for (const route of loginRoutes) {
+      const loginUrl = baseUrl + route;
+      if (loginUrl === url) continue; // Already tried
+      try {
+        await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(2000);
+        if (await page.locator('input[type="password"]').first().isVisible().catch(() => false)) return true;
+      } catch {}
+    }
+
+    // Strategy 3: Go back to original URL and click Login/Masuk link
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+    const loginLinkSels = [
+      'a:has-text("Login")', 'a:has-text("Sign in")', 'a:has-text("Masuk")', 'a:has-text("Log in")',
+      'button:has-text("Login")', 'button:has-text("Sign in")', 'button:has-text("Masuk")', 'button:has-text("Log in")',
+      'a[href*="login"]', 'a[href*="auth"]', 'a[href*="sign_in"]', 'a[href*="masuk"]',
+    ];
+    for (const s of loginLinkSels) {
+      const link = page.locator(s).first();
+      if (await link.isVisible().catch(() => false)) {
+        await link.click().catch(() => {});
+        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(2000);
+        if (await page.locator('input[type="password"]').first().isVisible().catch(() => false)) return true;
+        break;
+      }
+    }
+
+    // Strategy 4: Just wait on the original URL for SPA to render
+    try { await page.waitForSelector('input[type="password"]', { timeout: 10000, state: 'visible' }); return true; } catch {}
     return false;
   }
 
@@ -1016,9 +1076,9 @@ class TestRunner {
     R.push(await this.safeTest('TC-L-001', M, 'Form login terdeteksi di halaman',
       'URL = halaman login', '1. Buka URL\n2. Cari form login (password input, submit button)',
       'Form login ditemukan', async () => {
-        await this.ensureOnPage(page, url);
-        const hasForm = await this.detectLoginForm(page);
-        if (!hasForm) throw new Error('Form login tidak ditemukan');
+        // Navigate to login page using multiple strategies
+        const found = await this.navigateToLoginPage(page, url);
+        if (!found) throw new Error('Form login tidak ditemukan');
         return 'Form login terdeteksi';
       }));
 
@@ -1026,10 +1086,21 @@ class TestRunner {
     R.push(await this.safeTest('TC-L-002', M, 'Field username/email terdeteksi',
       'Form login ditemukan', '1. Cari input username/email',
       'Field username ditemukan', async () => {
-        const userSels = ['input[name="user[login]"]', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]', '#username', '#email', 'input[placeholder*="username" i]', 'input[placeholder*="email" i]', 'input[autocomplete="username"]'];
+        // Don't reload — form should already be visible from TC-L-001
+        const userSels = ['input[name="user[login]"]', 'input[name="username"]', 'input[name="email"]', 'input[type="email"]', '#username', '#email', 'input[placeholder*="username" i]', 'input[placeholder*="email" i]', 'input[placeholder*="user" i]', 'input[autocomplete="username"]', 'input[autocomplete="email"]', 'input[id*="user"]', 'input[id*="email"]', 'input[data-testid*="username"]', 'input[data-testid*="email"]', 'input[name*="user" i]', 'input[name*="email" i]'];
         let found = false;
         for (const s of userSels) {
           if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) {
+          // Check count() as fallback (element may be attached but not yet visible due to animation)
+          for (const s of userSels) {
+            if (await page.locator(s).count() > 0) { found = true; break; }
+          }
+        }
+        if (!found) {
+          // Wait for SPA hydration and try again
+          try { await page.waitForSelector('input[type="email"], input[name*="email" i], input[name*="user" i]', { timeout: 8000 }); found = true; } catch {}
         }
         if (!found) throw new Error('Field username/email tidak ditemukan');
         return 'Field username/email terdeteksi';
@@ -1039,8 +1110,15 @@ class TestRunner {
     R.push(await this.safeTest('TC-L-003', M, 'Password masking (type=password)',
       'Form login ditemukan', '1. Cari input password\n2. Cek type=password',
       'Password field menggunakan type=password', async () => {
+        // Don't reload — form should already be visible from TC-L-001
         const pwd = page.locator('input[type="password"]').first();
-        if (!await pwd.isVisible().catch(() => false)) throw new Error('Input password tidak ditemukan');
+        if (!await pwd.isVisible().catch(() => false)) {
+          // Check count() as fallback (element may be attached but not yet visible)
+          if (await page.locator('input[type="password"]').count() > 0) {
+            return 'Password masking aktif (type=password)';
+          }
+          try { await page.waitForSelector('input[type="password"]', { timeout: 5000, state: 'visible' }); } catch { throw new Error('Input password tidak ditemukan'); }
+        }
         return 'Password masking aktif (type=password)';
       }));
 
@@ -1048,10 +1126,21 @@ class TestRunner {
     R.push(await this.safeTest('TC-L-004', M, 'Submit button terdeteksi',
       'Form login ditemukan', '1. Cari button submit/login/sign in',
       'Submit button ditemukan', async () => {
-        const submitSels = ['button[type="submit"]', 'input[type="submit"]', 'button:has-text("Sign in")', 'button:has-text("Login")', 'button:has-text("Masuk")', 'button:has-text("Log in")'];
+        // Don't reload — form should already be visible from TC-L-001
+        const submitSels = ['button[type="submit"]', 'input[type="submit"]', 'button:has-text("Sign in")', 'button:has-text("Login")', 'button:has-text("Masuk")', 'button:has-text("Log in")', 'button:has-text("Sign In")', 'button:has-text("Login")', 'button:has-text("Masuk")', 'button:has-text("Log In")', 'button[type="button"]:has-text("Login")', 'button[type="button"]:has-text("Sign")', 'button[type="button"]:has-text("Masuk")', '[role="submit"]', 'button[data-testid*="submit"]', 'button[data-testid*="login"]', 'input[type="button"][value*="Login"]', 'input[type="button"][value*="Sign"]', 'input[type="button"][value*="Masuk"]'];
         let found = false;
         for (const s of submitSels) {
           if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+        }
+        if (!found) {
+          // Check count() as fallback (element may be attached but not yet visible)
+          for (const s of submitSels) {
+            if (await page.locator(s).count() > 0) { found = true; break; }
+          }
+        }
+        if (!found) {
+          // Wait for SPA hydration and try again
+          try { await page.waitForSelector('button[type="submit"], button:has-text("Login"), button:has-text("Sign in"), button:has-text("Masuk")', { timeout: 8000 }); found = true; } catch {}
         }
         if (!found) throw new Error('Submit button tidak ditemukan');
         return 'Submit button terdeteksi';
@@ -1345,9 +1434,9 @@ class TestRunner {
       'Cards atau widgets ditemukan', async () => {
         // Count container cards, exclude child elements like card-header, card-body, card-footer
         const total = await page.evaluate(() => {
-          const all = document.querySelectorAll('[class*="card"], [class*="widget"], [class*="stat"], [class*="metric"], [class*="summary"], canvas, svg[class*="chart"], [class*="chart"]');
+          const all = document.querySelectorAll('[class*="card"], [class*="widget"], [class*="stat"], [class*="metric"], [class*="summary"], [class*="grid-item"], [class*="tile"], [class*="panel"], [data-testid*="card"], [data-testid*="widget"], [data-testid*="stat"], [role="region"], article, section[class*="feature"], canvas, svg[class*="chart"], [class*="chart"]');
           let count = 0;
-          const excludePatterns = ['card-header', 'card-footer', 'card-body', 'card-title', 'card-text', 'card-subtitle', 'card-img', 'widget-header', 'widget-body', 'widget-footer', 'stat-label', 'stat-value'];
+          const excludePatterns = ['card-header', 'card-footer', 'card-body', 'card-title', 'card-text', 'card-subtitle', 'card-img', 'widget-header', 'widget-body', 'widget-footer', 'stat-label', 'stat-value', 'card-content', 'card-description'];
           for (const el of all) {
             const cls = (el.className || '').toLowerCase();
             const isChild = excludePatterns.some(p => cls.includes(p));
@@ -1492,7 +1581,7 @@ class TestRunner {
       }));
 
     // TC-N-003: Hamburger menu berfungsi (jika ada)
-    R.push(await this.safeTest('TC-N-003', M, 'Hamburger menu berfungsi di mobile',
+    R.push(await this.noteTest('TC-N-003', M, 'Hamburger menu berfungsi di mobile',
       'Halaman dimuat', '1. Cari hamburger toggle\n2. Resize ke mobile\n3. Klik hamburger\n4. Cek menu terbuka',
       'Hamburger menu berfungsi', async () => {
         const hamburgerSels = ['[class*="hamburger"]', '[class*="menu-toggle"]', '[aria-label*="menu" i]', 'button[class*="toggle"]', '[data-testid*="menu-toggle"]'];
@@ -1501,7 +1590,7 @@ class TestRunner {
           const el = page.locator(s).first();
           if (await el.isVisible().catch(() => false)) { hamburger = el; break; }
         }
-        if (!hamburger) return 'Hamburger menu tidak ditemukan (info)';
+        if (!hamburger) throw new Error('Hamburger menu tidak ditemukan');
         await this.setMobileViewport(page, 393, 852);
         await hamburger.click().catch(() => {});
         await page.waitForTimeout(500);
@@ -1551,10 +1640,10 @@ class TestRunner {
       }));
 
     // TC-N-006: Dropdown menu berfungsi (jika ada)
-    R.push(await this.safeTest('TC-N-006', M, 'Dropdown menu berfungsi',
+    R.push(await this.noteTest('TC-N-006', M, 'Dropdown menu berfungsi',
       'Halaman dimuat', '1. Cari dropdown toggle\n2. Klik untuk buka\n3. Cek menu items',
       'Dropdown menu berfungsi', async () => {
-        if (!d.hasDropdown) return 'Tidak ada dropdown (info)';
+        if (!d.hasDropdown) throw new Error('Dropdown tidak ditemukan');
         const dropdownSels = ['[data-toggle="dropdown"]', '[aria-haspopup="true"]', '.dropdown-toggle', 'details > summary', '[class*="dropdown"] > button'];
         let clicked = false;
         for (const s of dropdownSels) {
@@ -1567,7 +1656,7 @@ class TestRunner {
             await el.click().catch(() => {});
           }
         }
-        if (!clicked) return 'Dropdown tidak terbuka setelah klik (info)';
+        if (!clicked) throw new Error('Dropdown tidak terbuka setelah klik');
         return 'Dropdown menu berfungsi';
       }));
 
@@ -1605,10 +1694,10 @@ class TestRunner {
       }));
 
     // TC-N-009: Back/forward browser navigation
-    R.push(await this.safeTest('TC-N-009', M, 'Back/forward browser navigation berfungsi',
+    R.push(await this.noteTest('TC-N-009', M, 'Back/forward browser navigation berfungsi',
       'Halaman dimuat dengan nav pages', '1. Klik link internal\n2. Klik back\n3. Klik forward\n4. Cek halaman benar',
       'Back/forward navigation berfungsi', async () => {
-        if (d.navPages.length === 0) return 'Tidak ada nav pages (info)';
+        if (d.navPages.length === 0) throw new Error('Tidak ada nav pages untuk test');
         const testPage = d.navPages[0];
         const link = page.locator(`a[href="${testPage.path}"], a[href*="${testPage.path}"]`).first();
         if (await link.isVisible().catch(() => false)) {
@@ -1851,7 +1940,11 @@ class TestRunner {
       'Halaman dimuat dengan cookies', '1. Get all cookies\n2. Cek Secure, HttpOnly, SameSite',
       'Cookies punya security flags', async () => {
         const cookies = await page.context().cookies();
-        if (cookies.length === 0) throw new Error('Tidak ada cookies');
+        if (cookies.length === 0) {
+          // HttpOnly cookies are not visible to JS but are captured by context.cookies()
+          // If truly no cookies, mark as note
+          throw new Error('Tidak ada cookies terdeteksi (mungkin menggunakan token-based auth tanpa cookie)');
+        }
         const insecure = cookies.filter(c => !c.secure || !c.httpOnly);
         if (insecure.length > cookies.length * 0.5) {
           throw new Error(`${insecure.length}/${cookies.length} cookies tanpa Secure/HttpOnly flag`);
@@ -2012,7 +2105,8 @@ class TestRunner {
         const headers = await getHeaders();
         const acao = headers['access-control-allow-origin'];
         if (acao === '*') throw new Error('CORS Allow-Origin: * — terlalu permissive');
-        return `CORS policy: ${acao || 'tidak set (default same-origin)'}`;
+        if (!acao) return 'CORS tidak di-set (default same-origin, aman)';
+        return `CORS policy: ${acao}`;
       }));
 
     // TC-SEC-014: Mixed content (HTTP di HTTPS)
@@ -2475,9 +2569,9 @@ class TestRunner {
 
     // TC-P-008: Network errors
     R.push(await this.safeTest('TC-P-008', M, 'Tidak ada network errors (failed requests)',
-      'Halaman dimuat', '1. Monitor all network requests\n2. Flag failures',
+      'Halaman dimuat', '1. Monitor all network requests\n2. Flag failures (exclude RSC aborted)',
       'No network errors', async () => {
-        const failed = (this.networkErrors || []).filter(e => e.failure);
+        const failed = (this.networkErrors || []).filter(e => e.failure && e.failure !== 'net::ERR_ABORTED');
         const serverErrors = (this.networkErrors || []).filter(e => e.status && e.status >= 500);
         if (serverErrors.length > 0) throw new Error(`${serverErrors.length} server errors (5xx)`);
         if (failed.length > 5) throw new Error(`${failed.length} failed requests`);
@@ -2492,7 +2586,7 @@ class TestRunner {
     const M = 'CRUD & Interaction'; const R = [];
 
     // TC-CRUD-001: Table/data list terdeteksi
-    R.push(await this.safeTest('TC-CRUD-001', M, 'Table/data list terdeteksi',
+    R.push(await this.noteTest('TC-CRUD-001', M, 'Table/data list terdeteksi',
       'Dashboard dimuat', '1. Cari table, data list, grid',
       'Table atau data list ditemukan', async () => {
         await this.ensureOnPage(page, url);
@@ -2501,12 +2595,12 @@ class TestRunner {
         for (const s of tableSels) {
           if (await page.locator(s).count() > 0) { found = true; break; }
         }
-        if (!found) return 'Table/data list tidak ditemukan (info)';
+        if (!found) throw new Error('Table/data list tidak ditemukan');
         return 'Table/data list terdeteksi';
       }));
 
     // TC-CRUD-002: Create/Add button terdeteksi
-    R.push(await this.safeTest('TC-CRUD-002', M, 'Create/Add button terdeteksi',
+    R.push(await this.noteTest('TC-CRUD-002', M, 'Create/Add button terdeteksi',
       'Dashboard dimuat', '1. Cari button Add/Create/New/Tambah/Buat',
       'Create button ditemukan', async () => {
         const addSels = ['button:has-text("Add")', 'button:has-text("Create")', 'button:has-text("New")', 'button:has-text("Tambah")', 'button:has-text("Buat")', '[data-testid*="add"]', '[data-testid*="create"]'];
@@ -2514,12 +2608,12 @@ class TestRunner {
         for (const s of addSels) {
           if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
         }
-        if (!found) return 'Create/Add button tidak ditemukan (info)';
+        if (!found) throw new Error('Create/Add button tidak ditemukan');
         return 'Create/Add button terdeteksi';
       }));
 
     // TC-CRUD-003: Create form terbuka saat klik Add
-    R.push(await this.safeTest('TC-CRUD-003', M, 'Create form terbuka saat klik Add/Create',
+    R.push(await this.noteTest('TC-CRUD-003', M, 'Create form terbuka saat klik Add/Create',
       'Create button ditemukan', '1. Klik Add/Create\n2. Cek form/modal muncul atau navigasi ke halaman create',
       'Form create terbuka', async () => {
         const addSels = ['button:has-text("Add")', 'button:has-text("Create")', 'button:has-text("New")', 'button:has-text("Tambah")', 'button:has-text("Buat")'];
@@ -2528,7 +2622,7 @@ class TestRunner {
           const el = page.locator(s).first();
           if (await el.isVisible().catch(() => false)) { await el.click().catch(() => {}); clicked = true; break; }
         }
-        if (!clicked) return 'Tidak bisa klik Add button (info)';
+        if (!clicked) throw new Error('Tidak bisa klik Add button');
         const urlBefore = page.url();
         const inputCountBefore = await page.locator('input:visible, textarea:visible, select:visible').count();
         // Smart wait: form/modal appears OR URL changes OR input count increases
@@ -2602,7 +2696,7 @@ class TestRunner {
       }));
 
     // TC-CRUD-008: Search/filter function terdeteksi
-    R.push(await this.safeTest('TC-CRUD-008', M, 'Search/filter function terdeteksi',
+    R.push(await this.noteTest('TC-CRUD-008', M, 'Search/filter function terdeteksi',
       'Dashboard dengan table', '1. Cari search input atau filter button\n2. Cari bulk actions\n3. Cari row click',
       'Search/filter ditemukan', async () => {
         const features = [];
@@ -2611,7 +2705,7 @@ class TestRunner {
         if (hasBulkActions) features.push('bulk actions');
         const hasRowClick = await page.evaluate(() => !!document.querySelector('table tbody tr[onclick], table tbody tr[class*="clickable"], table tbody tr[style*="cursor"]')).catch(() => false);
         if (hasRowClick) features.push('row click');
-        if (features.length === 0) return 'Search/filter tidak ditemukan (info)';
+        if (features.length === 0) throw new Error('Search/filter tidak ditemukan');
         return features.join(' + ') + ' terdeteksi';
       }));
 
@@ -2673,15 +2767,13 @@ class TestRunner {
           if (apiTimings.avg > 3000) throw new Error(`API avg response time: ${apiTimings.avg}ms (terlalu lambat)`);
           return `API avg response time: ${apiTimings.avg}ms (${apiTimings.count} endpoints, Resource Timing API)`;
         }
-        if (!this._cachedHeaders) {
-          const navStart = Date.now();
-          const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
-          const elapsed = Date.now() - navStart;
-          if (res) this._cachedHeaders = res.headers();
-          if (elapsed > 3000) throw new Error(`Response time: ${elapsed}ms (terlalu lambat)`);
-          return `Response time: ${elapsed}ms`;
-        }
-        return 'Headers already cached — response time N/A';
+        // Always measure page load time, even if headers are cached
+        const navStart = Date.now();
+        const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null);
+        const elapsed = Date.now() - navStart;
+        if (res) this._cachedHeaders = res.headers();
+        if (elapsed > 3000) throw new Error(`Response time: ${elapsed}ms (terlalu lambat)`);
+        return `Page response time: ${elapsed}ms`;
       }));
 
     // TC-API-003: Content-Type header benar
@@ -2719,11 +2811,11 @@ class TestRunner {
       }));
 
     // TC-API-005: SameSite cookie protection
-    R.push(await this.safeTest('TC-API-005', M, 'SameSite cookie protection aktif',
+    R.push(await this.noteTest('TC-API-005', M, 'SameSite cookie protection aktif',
       'Halaman dimuat dengan cookies', '1. Get all cookies\n2. Cek SameSite attribute (Strict/Lax)',
       'Cookies punya SameSite protection', async () => {
         const cookies = await page.context().cookies();
-        if (cookies.length === 0) return 'Tidak ada cookies (info)';
+        if (cookies.length === 0) throw new Error('Tidak ada cookies terdeteksi');
         const noSameSite = cookies.filter(c => !c.sameSite || c.sameSite === 'None' || c.sameSite === 'unset');
         if (noSameSite.length > 0) {
           const detail = noSameSite.map(c => `${c.name}=${c.sameSite || 'unset'}`).join(', ');

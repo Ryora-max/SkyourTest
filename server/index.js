@@ -43,7 +43,8 @@ function rateLimit(key, maxRequests, windowMs) {
 function rateLimitMiddleware(maxRequests, windowMs) {
   return (req, res, next) => {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-    if (!rateLimit(ip, maxRequests, windowMs)) {
+    const routeKey = `${ip}:${req.method}:${req.path}`;
+    if (!rateLimit(routeKey, maxRequests, windowMs)) {
       return res.status(429).json({ error: 'Too many requests. Please try again later.' });
     }
     next();
