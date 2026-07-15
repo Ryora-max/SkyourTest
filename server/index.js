@@ -484,7 +484,8 @@ wss.on('connection', (ws, req) => {
     console.log(`  WebSocket client disconnected (total: ${wsClients.size})`);
   });
 
-  ws.on('error', () => {
+  ws.on('error', (err) => {
+    console.error('  WebSocket error:', err.message);
     wsClients.delete(ws);
   });
 });
@@ -504,6 +505,34 @@ const wsHeartbeat = setInterval(() => {
 
 server.on('close', () => {
   clearInterval(wsHeartbeat);
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n  ERROR: Port ${PORT} is already in use!`);
+    console.error('  Another instance may be running. Use: taskkill /f /im node.exe');
+    process.exit(1);
+  } else {
+    console.error('  Server error:', err.message);
+  }
+});
+
+// Graceful shutdown
+function gracefulShutdown(signal) {
+  console.log(`\n  ${signal} received, shutting down...`);
+  clearInterval(wsHeartbeat);
+  for (const ws of wsClients) { try { ws.close(); } catch {} }
+  server.close(() => {
+    saveRunsNow();
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 3000);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('uncaughtException', (err) => {
+  console.error('  Uncaught exception:', err.message);
+  saveRunsNow();
 });
 
 server.listen(PORT, () => {

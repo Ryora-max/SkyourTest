@@ -9,6 +9,7 @@ export default function LiveBrowserView({ runId, fullscreen = false, runStatus, 
   const [frameSize, setFrameSize] = useState({ w: 1920, h: 1080 });
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
   const canvasRef = useRef(null);
   const latestFrameRef = useRef(null);
   const rafRef = useRef(null);
@@ -36,6 +37,7 @@ export default function LiveBrowserView({ runId, fullscreen = false, runStatus, 
         ws.onopen = () => {
           if (!mounted) return;
           setConnected(true);
+          reconnectAttemptsRef.current = 0;
           if (runId) {
             ws.send(JSON.stringify({ type: 'subscribe', runId }));
           }
@@ -95,9 +97,11 @@ export default function LiveBrowserView({ runId, fullscreen = false, runStatus, 
           if (!mounted) return;
           setConnected(false);
           if (reconnectRef.current) clearTimeout(reconnectRef.current);
+          const delay = Math.min(2000 * Math.pow(2, reconnectAttemptsRef.current || 0), 10000);
+          reconnectAttemptsRef.current = (reconnectAttemptsRef.current || 0) + 1;
           reconnectRef.current = setTimeout(() => {
             if (mounted) connect();
-          }, 2000);
+          }, delay);
         };
 
         ws.onerror = () => {

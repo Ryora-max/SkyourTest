@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { chromium, firefox, webkit } = require('playwright');
 
 class TestRunner {
   constructor() {
@@ -328,7 +328,9 @@ class TestRunner {
     }
   }
 
-  getBrowser() {
+  getBrowser(type) {
+    if (type === 'firefox') return firefox;
+    if (type === 'webkit') return webkit;
     return chromium;
   }
 
@@ -525,9 +527,11 @@ class TestRunner {
   }
 
   async detectLoginForm(page) {
+    // Fast path: check if password input is already visible
+    if (await page.locator('input[type="password"]').first().isVisible().catch(() => false)) return true;
     // Wait for SPA hydration before checking
     await page.waitForLoadState('domcontentloaded').catch(() => {});
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
     const sels = [
       'input[type="password"]',
       'form[action*="sign_in"]', 'form[action*="login"]', 'form[action*="auth"]',
@@ -553,11 +557,12 @@ class TestRunner {
 
   // Navigate to login page — try URL, then /login, /auth, /sign_in, then click Login/Masuk link
   async navigateToLoginPage(page, url) {
+    let baseUrl;
+    try { baseUrl = new URL(url).origin; } catch { baseUrl = url; }
     // Strategy 1: Check if current page already has a password input
     if (await page.locator('input[type="password"]').first().isVisible().catch(() => false)) return true;
 
     // Strategy 2: Try common login routes
-    const baseUrl = new URL(url).origin;
     const loginRoutes = ['/login', '/auth', '/sign_in', '/signin', '/masuk', '/admin/login', '/users/sign_in'];
     for (const route of loginRoutes) {
       const loginUrl = baseUrl + route;
@@ -653,20 +658,18 @@ class TestRunner {
   // Helper: re-login after session disruption (cookie clear, negative tests)
   async ensureAuthenticated(page, url, username, password, authState) {
     if (!username || !password) return false;
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 }).catch(async () => {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-    });
-    await page.waitForTimeout(1000);
-    if (!await this.detectLoginForm(page)) {
+    // Try to find login form on current page first
+    let hasForm = await this.detectLoginForm(page);
+    if (!hasForm) {
+      // Clear cookies and navigate to login page
       await page.context().clearCookies();
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 }).catch(async () => {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-      });
-      await page.waitForTimeout(1500);
+      hasForm = await this.navigateToLoginPage(page, url);
     }
-    if (!await this.detectLoginForm(page)) return false;
+    if (!hasForm) return false;
     await this.fillLoginForm(page, username, password);
-    await page.waitForTimeout(3000);
+    // Wait for navigation after login (SPA redirect)
+    try { await page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+    await page.waitForTimeout(2000);
     const after = page.url();
     if (after.includes('sign_in') || after.includes('login') || after.includes('auth')) return false;
     authState.isAuthenticated = true;
@@ -676,6 +679,8 @@ class TestRunner {
 
   // Navigate to dashboard page — try current URL, then common dashboard routes
   async navigateToDashboard(page, url, authState) {
+    let baseUrl;
+    try { baseUrl = new URL(url).origin; } catch { baseUrl = url; }
     // If we have a dashboard URL from auth, try it first
     if (authState.dashboardUrl && authState.dashboardUrl !== url) {
       await page.goto(authState.dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
@@ -690,7 +695,6 @@ class TestRunner {
     if (hasDashboardContent) return true;
 
     // Try common dashboard routes
-    const baseUrl = new URL(url).origin;
     const dashboardRoutes = ['/dashboard', '/admin', '/admin/dashboard', '/home', '/panel', '/console', '/app', '/manage', '/cms'];
     for (const route of dashboardRoutes) {
       const dashUrl = baseUrl + route;

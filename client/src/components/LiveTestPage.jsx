@@ -208,6 +208,7 @@ export default function LiveTestPage({ run, onExit, onViewResults, onCancel, dar
   const [frameSize, setFrameSize] = useState({ w: 1920, h: 1080 });
   const wsRef = useRef(null);
   const reconnectRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
   const stepsRef = useRef(null);
   const startTimeRef = useRef(null);
   const canvasRef = useRef(null);
@@ -268,6 +269,7 @@ export default function LiveTestPage({ run, onExit, onViewResults, onCancel, dar
         ws.onopen = () => {
           if (!mounted) return;
           setConnected(true);
+          reconnectAttemptsRef.current = 0;
           if (run?.id) ws.send(JSON.stringify({ type: 'subscribe', runId: run.id }));
         };
 
@@ -355,7 +357,10 @@ export default function LiveTestPage({ run, onExit, onViewResults, onCancel, dar
           if (!mounted) return;
           setConnected(false);
           if (reconnectRef.current) clearTimeout(reconnectRef.current);
-          reconnectRef.current = setTimeout(() => { if (mounted) connect(); }, 2000);
+          // Exponential backoff: 2s, 4s, 8s, max 10s
+          const delay = Math.min(2000 * Math.pow(2, reconnectAttemptsRef.current || 0), 10000);
+          reconnectAttemptsRef.current = (reconnectAttemptsRef.current || 0) + 1;
+          reconnectRef.current = setTimeout(() => { if (mounted) connect(); }, delay);
         };
 
         ws.onerror = () => setConnected(false);

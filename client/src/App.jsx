@@ -256,7 +256,9 @@ function AppContent() {
     fetchRuns();
   };
 
-  useEffect(() => () => stopPolling(), []);
+  useEffect(() => () => {
+    stopPolling();
+  }, []);
 
   const downloadReport = (runId) => {
     window.open(`${API_BASE}/api/runs/${runId}/report`, '_blank');
@@ -348,6 +350,7 @@ function AppContent() {
 
           {view === 'live' && currentRun && (
             <LiveTestPage
+              key={currentRun.id}
               run={currentRun}
               darkMode={darkMode}
               onViewResults={() => handleSetView('results')}
