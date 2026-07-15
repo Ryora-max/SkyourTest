@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Globe, User, Lock, Chrome, Rocket, CheckCircle2, LogIn, Loader2, AlertCircle, ChevronRight, ChevronLeft, Database, Briefcase, Brain, Users, Shield } from 'lucide-react';
+import { Globe, User, Lock, Chrome, Rocket, CheckCircle2, Loader2, AlertCircle, ChevronRight, ChevronLeft, Database, Briefcase, Brain, Users, Shield } from 'lucide-react';
 
 const WEB_PROFILES = [
   {

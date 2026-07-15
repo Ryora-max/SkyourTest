@@ -404,6 +404,11 @@ class TestRunner {
           if (currentUrl.includes('sign_in') || currentUrl.includes('login') || currentUrl.includes('auth')) {
             await this.ensureAuthenticated(page, url, role.email, role.password, authState);
           }
+          // Navigate back to dashboard if we drifted away
+          if (authState.dashboardUrl && !page.url().includes(authState.dashboardUrl)) {
+            await page.goto(authState.dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+            await page.waitForTimeout(1000);
+          }
         }
 
         const targetUrl = authState.isAuthenticated ? authState.dashboardUrl : url;
@@ -690,6 +695,7 @@ class TestRunner {
         'Logout berhasil, redirect ke login', async () => {
           const loggedOut = await this.logout(page, authState);
           if (!loggedOut) throw new Error('Tombol logout tidak ditemukan');
+          authState.isAuthenticated = false;
           const afterUrl = page.url();
           if (afterUrl.includes('login') || afterUrl.includes('sign_in') || afterUrl.includes('auth') || afterUrl === url) {
             return 'Logout berhasil, session cleared';
@@ -697,7 +703,7 @@ class TestRunner {
           return 'Logout berhasil (URL: ' + afterUrl + ')';
         }));
       // Re-login for subsequent modules
-      if (authState.isAuthenticated === false) {
+      if (!authState.isAuthenticated) {
         await this.navigateToLoginPage(page, url);
         await this.fillLoginForm(page, email, pwd);
         try { await page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
@@ -719,6 +725,7 @@ class TestRunner {
         'Tidak bisa akses dashboard setelah logout', async () => {
           // Logout first
           await this.logout(page, authState);
+          authState.isAuthenticated = false;
           await page.waitForTimeout(1000);
           // Go back
           await page.goBack().catch(() => {});
