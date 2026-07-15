@@ -249,6 +249,8 @@ app.get('/api/runs/:id/status', (req, res) => {
     url: run.url,
     browser: run.browser,
     testMode: run.testMode,
+    webTarget: run.webTarget || '',
+    role: run.role || '',
     startTime: run.startTime,
     endTime: run.endTime,
   });

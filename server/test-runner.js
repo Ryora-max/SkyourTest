@@ -114,6 +114,8 @@ class TestRunner {
     const results = [];
     this.runId = runConfig.id;
     this.cancelled = false;
+    this._cachedHeaders = null;
+    this._cachedErrorBody = null;
 
     let browser;
     let page;
@@ -349,6 +351,9 @@ class TestRunner {
       if (roleIdx > 0) {
         await page.context().clearCookies();
         await page.goto('about:blank').catch(() => {});
+        // Reset cached state from previous role
+        this._cachedHeaders = null;
+        this._cachedErrorBody = null;
       }
 
       runConfig.currentTest = `${rolePrefix} Login sebagai ${role.email}...`;
@@ -2322,7 +2327,7 @@ class TestRunner {
   }
 
   async noteTest(id, modul, title, preConditions, testSteps, expected, testFn, category) {
-    const cat = category || 'note';
+    const cat = category || 'optional';
     const start = Date.now();
     this.broadcastStep(id, modul, title, 'start', '');
     try {
@@ -2331,7 +2336,7 @@ class TestRunner {
       return this.makeResult(id, modul, title, preConditions, testSteps, expected, actual, 'passed', Date.now() - start, '', cat);
     } catch (err) {
       this.broadcastStep(id, modul, title, 'note', err.message);
-      return this.makeResult(id, modul, title, preConditions, testSteps, expected, err.message, 'note', Date.now() - start, err.message, cat);
+      return this.makeResult(id, modul, title, preConditions, testSteps, expected, `Catatan: ${err.message}`, 'note', Date.now() - start, '', cat);
     }
   }
 
@@ -2375,21 +2380,6 @@ class TestRunner {
 
   note(id, modul, title, preConditions, testSteps, expected, reason) {
     return this.makeResult(id, modul, title, preConditions, testSteps, expected, `Catatan: ${reason}`, 'note', 0, '', 'optional');
-  }
-
-  // Sama seperti safeTest, tapi kegagalan dianggap "catatan" (note), bukan "gagal".
-  // Digunakan untuk cek best-practice / non-mandatory (optional) agar tidak menurunkan nilai.
-  async noteTest(id, modul, title, preConditions, testSteps, expected, testFn) {
-    const start = Date.now();
-    this.broadcastStep(id, modul, title, 'start', '');
-    try {
-      const actual = await testFn();
-      this.broadcastStep(id, modul, title, 'done', actual);
-      return this.makeResult(id, modul, title, preConditions, testSteps, expected, actual, 'passed', Date.now() - start, '', 'optional');
-    } catch (err) {
-      this.broadcastStep(id, modul, title, 'note', err.message);
-      return this.makeResult(id, modul, title, preConditions, testSteps, expected, `Catatan: ${err.message}`, 'note', Date.now() - start, '', 'optional');
-    }
   }
 
   // ===== Scanning Total Helpers =====
@@ -3517,7 +3507,8 @@ class TestRunner {
   // ===== Modul: Security & Hack (15 tests) =====
   async testSecurity(page, url, d) {
     const M = 'Security & Hack'; const R = [];
-    const baseUrl = new URL(url);
+    let baseUrl;
+    try { baseUrl = new URL(url); } catch { baseUrl = new URL('http://localhost'); }
 
     // Cache response headers once for all header-based tests
     if (!this._cachedHeaders) {
@@ -4362,7 +4353,8 @@ class TestRunner {
   // ===== Modul: API & Data (7 tests) =====
   async testApiData(page, url, d, authState) {
     const M = 'API & Data'; const R = [];
-    const baseUrl = new URL(url);
+    let baseUrl;
+    try { baseUrl = new URL(url); } catch { baseUrl = new URL('http://localhost'); }
 
     // TC-API-001: Tidak ada API error 5xx
     R.push(await this.safeTest('TC-API-001', M, 'Tidak ada API error 5xx (server error)',
