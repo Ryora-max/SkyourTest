@@ -439,10 +439,9 @@ class TestRunner {
         this.broadcastProgress(Math.round(((completedSlots) / totalModuleSlots) * 95) + 2);
       }
 
-      // Collect console/network errors per role
+      // Collect console/network errors per role (before logout)
       if (this.consoleErrors?.length > 0) allConsoleErrors.push(...this.consoleErrors.map(e => ({ ...e, role: role.id })));
       if (this.networkErrors?.length > 0) allNetworkErrors.push(...this.networkErrors.map(e => ({ ...e, role: role.id })));
-      // Reset for next role
       this.consoleErrors = [];
       this.networkErrors = [];
 
@@ -450,7 +449,14 @@ class TestRunner {
       if (roleIdx < roles.length - 1) {
         runConfig.currentTest = `${rolePrefix} Logout...`;
         await this.logout(page, authState).catch(() => {});
+        // Collect any errors produced during logout
+        if (this.consoleErrors?.length > 0) allConsoleErrors.push(...this.consoleErrors.map(e => ({ ...e, role: role.id })));
+        if (this.networkErrors?.length > 0) allNetworkErrors.push(...this.networkErrors.map(e => ({ ...e, role: role.id })));
       }
+
+      // Reset for next role
+      this.consoleErrors = [];
+      this.networkErrors = [];
     }
 
     // Check if cancelled during loops
