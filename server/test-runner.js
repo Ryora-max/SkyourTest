@@ -674,6 +674,72 @@ class TestRunner {
     return true;
   }
 
+  // Navigate to dashboard page — try current URL, then common dashboard routes
+  async navigateToDashboard(page, url, authState) {
+    // If we have a dashboard URL from auth, try it first
+    if (authState.dashboardUrl && authState.dashboardUrl !== url) {
+      await page.goto(authState.dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+      await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+    }
+    // Check if current page has dashboard-like content (cards/widgets/stats)
+    const hasDashboardContent = await page.evaluate(() => {
+      const els = document.querySelectorAll('[class*="card"], [class*="widget"], [class*="stat"], [class*="metric"], [class*="summary"], [class*="grid-item"], [class*="tile"], canvas, svg[class*="chart"], [class*="chart"], table, [class*="data-table"]');
+      return els.length > 0;
+    }).catch(() => false);
+    if (hasDashboardContent) return true;
+
+    // Try common dashboard routes
+    const baseUrl = new URL(url).origin;
+    const dashboardRoutes = ['/dashboard', '/admin', '/admin/dashboard', '/home', '/panel', '/console', '/app', '/manage', '/cms'];
+    for (const route of dashboardRoutes) {
+      const dashUrl = baseUrl + route;
+      if (dashUrl === url) continue;
+      try {
+        await page.goto(dashUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(2000);
+        const hasContent = await page.evaluate(() => {
+          const els = document.querySelectorAll('[class*="card"], [class*="widget"], [class*="stat"], [class*="metric"], [class*="summary"], [class*="grid-item"], [class*="tile"], canvas, svg[class*="chart"], [class*="chart"], table, [class*="data-table"]');
+          return els.length > 0;
+        }).catch(() => false);
+        if (hasContent) {
+          authState.dashboardUrl = dashUrl;
+          return true;
+        }
+      } catch {}
+    }
+
+    // Try clicking dashboard/home link in nav
+    const navLinkSels = [
+      'a:has-text("Dashboard")', 'a:has-text("Panel")', 'a:has-text("Beranda")', 'a:has-text("Home")',
+      'a:has-text("Admin")', 'a[href*="dashboard"]', 'a[href*="admin"]', 'a[href*="home"]',
+    ];
+    for (const s of navLinkSels) {
+      const link = page.locator(s).first();
+      if (await link.isVisible().catch(() => false)) {
+        await link.click().catch(() => {});
+        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(2000);
+        const hasContent = await page.evaluate(() => {
+          const els = document.querySelectorAll('[class*="card"], [class*="widget"], [class*="stat"], [class*="metric"], [class*="summary"], [class*="grid-item"], [class*="tile"], canvas, svg[class*="chart"], [class*="chart"], table, [class*="data-table"]');
+          return els.length > 0;
+        }).catch(() => false);
+        if (hasContent) {
+          authState.dashboardUrl = page.url();
+          return true;
+        }
+        break;
+      }
+    }
+
+    // Last resort: go back to original URL and wait
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+    return false;
+  }
+
   // ===== Dispatcher =====
   async runModule(page, mod, targetUrl, originalUrl, username, password, authState, detect, runConfig) {
     switch (mod) {
@@ -1432,6 +1498,8 @@ class TestRunner {
     R.push(await this.safeTest('TC-D-003', M, 'Cards/widgets/statistics terdeteksi',
       'Dashboard dimuat', '1. Cari card/widget/stat elements (container only, exclude header/footer/body)',
       'Cards atau widgets ditemukan', async () => {
+        // Try to navigate to actual dashboard page if current page doesn't have cards
+        await this.navigateToDashboard(page, url, authState);
         // Count container cards, exclude child elements like card-header, card-body, card-footer
         const total = await page.evaluate(() => {
           const all = document.querySelectorAll('[class*="card"], [class*="widget"], [class*="stat"], [class*="metric"], [class*="summary"], [class*="grid-item"], [class*="tile"], [class*="panel"], [data-testid*="card"], [data-testid*="widget"], [data-testid*="stat"], [role="region"], article, section[class*="feature"], canvas, svg[class*="chart"], [class*="chart"]');

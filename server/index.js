@@ -498,7 +498,7 @@ const wsHeartbeat = setInterval(() => {
       continue;
     }
     ws.isAlive = false;
-    ws.ping().catch(() => {});
+    try { ws.ping(); } catch {}
   }
 }, 30000);
 
