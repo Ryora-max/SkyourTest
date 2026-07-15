@@ -406,9 +406,14 @@ class TestRunner {
             await this.ensureAuthenticated(page, url, role.email, role.password, authState);
           }
           // Navigate back to dashboard if we drifted away
-          if (authState.dashboardUrl && !page.url().includes(authState.dashboardUrl)) {
-            await page.goto(authState.dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-            await page.waitForTimeout(1000);
+          if (authState.dashboardUrl) {
+            let dashOrigin, dashPath, currentOrigin, currentPath;
+            try { const du = new URL(authState.dashboardUrl); dashOrigin = du.origin; dashPath = du.pathname; } catch { dashOrigin = authState.dashboardUrl; dashPath = ''; }
+            try { const cu = new URL(page.url()); currentOrigin = cu.origin; currentPath = cu.pathname; } catch { currentOrigin = page.url(); currentPath = ''; }
+            if (currentOrigin !== dashOrigin || (dashPath && currentPath !== dashPath && !currentPath.startsWith(dashPath + '/'))) {
+              await page.goto(authState.dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+              await page.waitForTimeout(1000);
+            }
           }
         }
 
@@ -2350,11 +2355,8 @@ class TestRunner {
 
   async ensureOnPage(page, url) {
     const current = page.url();
-    if (current === url || current.startsWith(url) || url.startsWith(current)) return;
+    if (current === url || current.startsWith(url + '/') || current.startsWith(url + '?') || current.startsWith(url + '#')) return;
     if (current.startsWith('about:')) return;
-    try {
-      if (new URL(current).origin === new URL(url).origin) return;
-    } catch {}
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(500);
   }
