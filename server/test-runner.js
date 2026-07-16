@@ -510,11 +510,15 @@ class TestRunner {
   // Logout helper
   async logout(page, authState) {
     const logoutSels = [
-      'button:has-text("Logout")', 'button:has-text("Log out")', 'button:has-text("Keluar")',
-      'a:has-text("Logout")', 'a:has-text("Log out")', 'a:has-text("Keluar")',
-      'button:has-text("Sign out")', 'a:has-text("Sign out")',
-      '[data-testid*="logout"]', '[class*="logout"]',
+      'button:has-text("Logout")', 'button:has-text("Log out")', 'button:has-text("Log Out")',
+      'button:has-text("Keluar")', 'button:has-text("Sign out")', 'button:has-text("Sign Out")',
+      'a:has-text("Logout")', 'a:has-text("Log out")', 'a:has-text("Log Out")',
+      'a:has-text("Keluar")', 'a:has-text("Sign out")', 'a:has-text("Sign Out")',
+      'a[href*="logout"]', 'a[href*="sign_out"]', 'a[href*="signout"]',
+      '[data-testid*="logout"]', '[class*="logout"]', '[class*="sign-out"]',
+      'button[data-testid*="logout"]', 'button[class*="logout"]',
     ];
+    // First try direct logout buttons/links
     for (const s of logoutSels) {
       const el = page.locator(s).first();
       if (await el.isVisible().catch(() => false)) {
@@ -523,13 +527,29 @@ class TestRunner {
         return true;
       }
     }
-    // Try dropdown menu first
-    const menuSels = ['button:has-text("Menu")', '[class*="dropdown"]', '[class*="user-menu"]', '[aria-label*="menu" i]', '.avatar', '[class*="avatar"]'];
+    // Try expanding sidebar menus (logout might be in a collapsed sidebar)
+    await this.expandSidebarMenus(page);
+    for (const s of logoutSels) {
+      const el = page.locator(s).first();
+      if (await el.isVisible().catch(() => false)) {
+        await el.click().catch(() => {});
+        await page.waitForTimeout(2000);
+        return true;
+      }
+    }
+    // Try dropdown menu — click user avatar/name/menu to reveal logout option
+    const menuSels = [
+      'button:has-text("Menu")', '[class*="dropdown-toggle"]', '[class*="user-menu"]',
+      '[aria-label*="menu" i]', '.avatar', '[class*="avatar"]', 'img[class*="avatar"]',
+      '[class*="user-info"]', '[class*="user-dropdown"]', '[data-testid*="user-menu"]',
+      'button:has-text("Account")', 'button[aria-haspopup="true"]',
+      '[class*="navbar"] [class*="dropdown"]', 'header [class*="dropdown"]',
+    ];
     for (const s of menuSels) {
       const el = page.locator(s).first();
       if (await el.isVisible().catch(() => false)) {
         await el.click().catch(() => {});
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(800);
         for (const ls of logoutSels) {
           const logoutEl = page.locator(ls).first();
           if (await logoutEl.isVisible().catch(() => false)) {
@@ -538,6 +558,8 @@ class TestRunner {
             return true;
           }
         }
+        // Close dropdown if logout not found
+        await page.keyboard.press('Escape').catch(() => {});
       }
     }
     // Fallback: clear cookies
@@ -932,6 +954,10 @@ class TestRunner {
           const result = await this.findFeaturePage(page, detect.navPages, addSels, authState.dashboardUrl || url);
           if (result.found) return 'Button tambah employee terdeteksi (di sub-halaman)';
         }
+        // Try common employee routes
+        const empRoutes = ['/employee', '/employees', '/pegawai', '/users', '/admin/employee', '/admin/pegawai', '/manage/employee'];
+        const empResult = await this.tryCommonRoutes(page, authState.dashboardUrl || url, empRoutes, addSels);
+        if (empResult.found) return 'Button tambah employee terdeteksi (di route employee)';
         throw new Error('Button tambah employee tidak ditemukan');
       }));
 
@@ -1063,6 +1089,10 @@ class TestRunner {
           const result = await this.findFeaturePage(page, detect.navPages, kompSels, authState.dashboardUrl || url);
           if (result.found) return 'Menu Master Kompetensi terdeteksi (di sub-halaman)';
         }
+        // Try common kompetensi routes
+        const kompRoutes = ['/kompetensi', '/competency', '/master/kompetensi', '/admin/kompetensi', '/manage/kompetensi', '/master/competency'];
+        const kompResult = await this.tryCommonRoutes(page, authState.dashboardUrl || url, kompRoutes, kompSels);
+        if (kompResult.found) return 'Menu Master Kompetensi terdeteksi (di route kompetensi)';
         throw new Error('Menu kompetensi tidak ditemukan');
       }));
 
@@ -1140,6 +1170,10 @@ class TestRunner {
           const result = await this.findFeaturePage(page, detect.navPages, testSels, authState.dashboardUrl || url);
           if (result.found) return 'List test/assessment terdeteksi (di sub-halaman)';
         }
+        // Try common test/assessment routes
+        const assessRoutes = ['/test', '/tests', '/assessment', '/assessments', '/admin/test', '/admin/assessment', '/manage/test', '/ujian', '/soal'];
+        const assessResult = await this.tryCommonRoutes(page, authState.dashboardUrl || url, assessRoutes, testSels);
+        if (assessResult.found) return 'List test/assessment terdeteksi (di route test)';
         throw new Error('List test tidak ditemukan');
       }));
 
@@ -2419,6 +2453,26 @@ class TestRunner {
     }
   }
 
+  // Try common feature routes for SPAs where navPages might be empty/stale
+  async tryCommonRoutes(page, baseUrl, routes, selectors) {
+    let base;
+    try { base = new URL(baseUrl).origin; } catch { base = baseUrl; }
+    for (const route of routes) {
+      const fullUrl = base + route;
+      try {
+        await page.goto(fullUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+        for (const s of selectors) {
+          if (await page.locator(s).first().isVisible().catch(() => false)) {
+            return { found: true, url: fullUrl };
+          }
+        }
+      } catch {}
+    }
+    return { found: false, url: null };
+  }
+
   // Smart wait: wait for any of multiple selectors to appear, or URL to change
   async smartWait(page, selectors, opts = {}) {
     const { timeout = 5000, urlChange = false, originalUrl = null } = opts;
@@ -3245,8 +3299,21 @@ class TestRunner {
         // Re-check on current page (d may be stale from initial detection)
         const currentLinks = await page.locator('a[href]').count();
         const roleLinks = await page.locator('[role="link"], [onclick], nav button, [class*="nav"] button, [class*="menu"] [role="button"], [class*="sidebar"] a, [class*="sidebar"] button').count();
-        if (currentLinks === 0 && roleLinks === 0) throw new Error('Tidak ada internal links');
-        return `${currentLinks} a[href] + ${roleLinks} nav buttons/role=link terdeteksi`;
+        // Also check for SPA-style nav: elements with cursor:pointer in nav/sidebar areas
+        const spaNavLinks = await page.evaluate(() => {
+          const navAreas = document.querySelectorAll('nav, [class*="sidebar"], [class*="menu"], [class*="sidenav"], [role="navigation"]');
+          let count = 0;
+          for (const area of navAreas) {
+            const clickables = area.querySelectorAll('a, button, [role="link"], [role="button"], [onclick], li, div[class*="item"], div[class*="link"]');
+            for (const el of clickables) {
+              const style = window.getComputedStyle(el);
+              if (style.cursor === 'pointer' || el.tagName === 'A' || el.tagName === 'BUTTON' || el.hasAttribute('onclick')) count++;
+            }
+          }
+          return count;
+        }).catch(() => 0);
+        if (currentLinks === 0 && roleLinks === 0 && spaNavLinks === 0) throw new Error('Tidak ada internal links');
+        return `${currentLinks} a[href] + ${roleLinks} nav buttons + ${spaNavLinks} SPA nav items terdeteksi`;
       }));
 
     // TC-N-002: Menu structure (nav/sidebar) konsisten
