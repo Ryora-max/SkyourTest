@@ -747,6 +747,9 @@ class TestRunner {
       R.push(await this.safeTest('TC-L-009', M, 'Logout berhasil',
         'User login', '1. Cari tombol logout\n2. Klik logout\n3. Cek redirect ke login',
         'Logout berhasil, redirect ke login', async () => {
+          // Navigate to dashboard first (page might be on select-tenant after reload)
+          await this.navigateToDashboard(page, url, authState);
+          await this.handleTenantSelection(page, authState);
           const loggedOut = await this.logout(page, authState);
           if (!loggedOut) throw new Error('Tombol logout tidak ditemukan');
           authState.isAuthenticated = false;
@@ -3377,9 +3380,11 @@ class TestRunner {
     R.push(await this.safeTest('TC-N-002', M, 'Menu structure (nav/sidebar) terdeteksi',
       'Halaman dimuat', '1. Cari nav/sidebar/menu\n2. Cek struktur link\n3. Cek active state',
       'Menu structure ditemukan', async () => {
-        if (!d.hasNav) throw new Error('Tidak ada navigasi/sidebar/menu');
+        // Re-check on current page (d may be stale from pre-login detection)
+        const hasNavNow = await page.locator('nav, [role="navigation"], [class*="sidebar"], aside, [class*="navbar"], [class*="menu"], [class*="sidenav"], [class*="side-nav"]').first().isVisible().catch(() => false);
+        if (!hasNavNow && !d.hasNav) throw new Error('Tidak ada navigasi/sidebar/menu');
         const hasActive = await page.evaluate(() => !!document.querySelector('[aria-current], .active, [class*="active"]')).catch(() => false);
-        return `Menu layout: ${d.menuLayout}${hasActive ? ' (active state detected)' : ''}`;
+        return `Menu layout: ${d.menuLayout || 'detected'}${hasActive ? ' (active state detected)' : ''}`;
       }));
 
     // TC-N-003: Hamburger menu berfungsi (jika ada)
