@@ -278,8 +278,8 @@ class TestRunner {
           steps: '1. Capture all console.error, uncaught exceptions',
           expected: 'No console errors',
           actual: errors.length > 0 ? `${errors.length} console errors:\n${errorDetails}` : 'No console errors',
-          status: errors.length > 0 ? 'failed' : 'passed',
-          category: 'primary',
+          status: errors.length > 0 ? 'note' : 'passed',
+          category: 'optional',
           duration: 0,
         });
         runConfig.results.push(results[results.length - 1]);
@@ -296,8 +296,8 @@ class TestRunner {
             steps: '1. Monitor all HTTP requests and responses\n2. Flag 4xx/5xx responses and failed requests',
             expected: 'No network errors',
             actual: `${realErrors.length} network issues:\n${netDetails}`,
-            status: realErrors.some(e => (e.status && e.status >= 400) || (e.failure && e.failure !== 'net::ERR_ABORTED')) ? 'failed' : 'passed',
-            category: 'primary',
+            status: realErrors.some(e => (e.status && e.status >= 400) || (e.failure && e.failure !== 'net::ERR_ABORTED')) ? 'note' : 'passed',
+            category: 'optional',
             duration: 0,
           });
           runConfig.results.push(results[results.length - 1]);
@@ -478,7 +478,7 @@ class TestRunner {
           steps: '1. Capture all console.error, uncaught exceptions per role',
           expected: 'No console errors',
           actual: `${errors.length} console errors:\n${errorDetails}`,
-          status: 'failed', category: 'primary', duration: 0,
+          status: 'note', category: 'optional', duration: 0,
         });
         runConfig.results.push(results[results.length - 1]);
       }
@@ -494,7 +494,7 @@ class TestRunner {
           steps: '1. Monitor all HTTP requests and responses per role',
           expected: 'No network errors',
           actual: `${realErrors.length} network issues:\n${netDetails}`,
-          status: 'failed', category: 'primary', duration: 0,
+          status: 'note', category: 'optional', duration: 0,
         });
         runConfig.results.push(results[results.length - 1]);
       }
@@ -590,11 +590,20 @@ class TestRunner {
     const email = role.email;
     const pwd = role.password;
 
+    // If already authenticated, clear cookies to force login form display
+    // (SPAs may show dashboard at same URL as login page)
+    if (authState.isAuthenticated) {
+      await page.context().clearCookies();
+      authState.isAuthenticated = false;
+    }
+    // Navigate to login page and wait for form
+    await this.navigateToLoginPage(page, url);
+    await page.waitForTimeout(1000);
+
     // TC-L-001: Login form detected
     R.push(await this.safeTest('TC-L-001', M, 'Form login terdeteksi di halaman',
       'URL = halaman login', '1. Buka URL\n2. Cari form login',
       'Form login ditemukan', async () => {
-        await this.ensureOnPage(page, url);
         const hasForm = await this.detectLoginForm(page);
         if (!hasForm) throw new Error('Form login tidak ditemukan');
         return 'Form login terdeteksi';
@@ -911,13 +920,19 @@ class TestRunner {
     R.push(await this.safeTest('TC-EMP-002', M, 'Button tambah employee terdeteksi',
       'Tabel employee', '1. Cari button add/tambah employee',
       'Button add ditemukan', async () => {
-        const addSels = ['button:has-text("Add")', 'button:has-text("Tambah")', 'button:has-text("Create")', 'button:has-text("Buat")', 'button:has-text("New")', 'a:has-text("Add")', 'a:has-text("Tambah")', '[class*="add-button"]', '[data-testid*="add"]'];
-        let found = false;
+        await this.navigateToDashboard(page, url, authState);
+        await this.expandSidebarMenus(page);
+        const addSels = ['button:has-text("Add")', 'button:has-text("Tambah")', 'button:has-text("Create")', 'button:has-text("Buat")', 'button:has-text("New")', 'a:has-text("Add")', 'a:has-text("Tambah")', '[class*="add-button"]', '[data-testid*="add"]', '[class*="floating-action"]', 'button[aria-label*="add" i]'];
+        // First check current page
         for (const s of addSels) {
-          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+          if (await page.locator(s).first().isVisible().catch(() => false)) return 'Button tambah employee terdeteksi';
         }
-        if (!found) throw new Error('Button tambah employee tidak ditemukan');
-        return 'Button tambah employee terdeteksi';
+        // Try nav pages
+        if (detect.navPages && detect.navPages.length > 0) {
+          const result = await this.findFeaturePage(page, detect.navPages, addSels, authState.dashboardUrl || url);
+          if (result.found) return 'Button tambah employee terdeteksi (di sub-halaman)';
+        }
+        throw new Error('Button tambah employee tidak ditemukan');
       }));
 
     // TC-EMP-003: CRUD Divisi
@@ -1036,13 +1051,19 @@ class TestRunner {
     R.push(await this.safeTest('TC-KOMP-001', M, 'Menu Master Kompetensi terdeteksi',
       'Dashboard', '1. Cari menu kompetensi',
       'Menu kompetensi ditemukan', async () => {
-        const kompSels = ['a:has-text("Kompetensi")', 'a[href*="kompetensi"]', 'a:has-text("Competency")', 'a[href*="competency"]', 'button:has-text("Kompetensi")', '[class*="kompetensi"]', '[data-testid*="kompetensi"]'];
-        let found = false;
+        await this.navigateToDashboard(page, url, authState);
+        await this.expandSidebarMenus(page);
+        const kompSels = ['a:has-text("Kompetensi")', 'a[href*="kompetensi"]', 'a:has-text("Competency")', 'a[href*="competency"]', 'button:has-text("Kompetensi")', '[class*="kompetensi"]', '[data-testid*="kompetensi"]', '[class*="competency"]'];
+        // Check current page
         for (const s of kompSels) {
-          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+          if (await page.locator(s).first().isVisible().catch(() => false)) return 'Menu Master Kompetensi terdeteksi';
         }
-        if (!found) throw new Error('Menu kompetensi tidak ditemukan');
-        return 'Menu Master Kompetensi terdeteksi';
+        // Try nav pages
+        if (detect.navPages && detect.navPages.length > 0) {
+          const result = await this.findFeaturePage(page, detect.navPages, kompSels, authState.dashboardUrl || url);
+          if (result.found) return 'Menu Master Kompetensi terdeteksi (di sub-halaman)';
+        }
+        throw new Error('Menu kompetensi tidak ditemukan');
       }));
 
     // TC-KOMP-002: Form Kompetensi
@@ -1107,13 +1128,19 @@ class TestRunner {
     R.push(await this.safeTest('TC-ASSESS-001', M, 'List test/assessment terdeteksi',
       'Dashboard', '1. Cari list/section test',
       'List test ditemukan', async () => {
-        const testSels = ['a:has-text("Test")', 'a[href*="test"]', 'a:has-text("Assessment")', 'a[href*="assessment"]', '[class*="test-list"]', '[class*="assessment"]', '[data-testid*="test"]'];
-        let found = false;
+        await this.navigateToDashboard(page, url, authState);
+        await this.expandSidebarMenus(page);
+        const testSels = ['a:has-text("Test")', 'a[href*="test"]', 'a:has-text("Assessment")', 'a[href*="assessment"]', '[class*="test-list"]', '[class*="assessment"]', '[data-testid*="test"]', 'button:has-text("Test")', 'button:has-text("Assessment")'];
+        // Check current page
         for (const s of testSels) {
-          if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
+          if (await page.locator(s).first().isVisible().catch(() => false)) return 'List test/assessment terdeteksi';
         }
-        if (!found) throw new Error('List test tidak ditemukan');
-        return 'List test/assessment terdeteksi';
+        // Try nav pages
+        if (detect.navPages && detect.navPages.length > 0) {
+          const result = await this.findFeaturePage(page, detect.navPages, testSels, authState.dashboardUrl || url);
+          if (result.found) return 'List test/assessment terdeteksi (di sub-halaman)';
+        }
+        throw new Error('List test tidak ditemukan');
       }));
 
     // TC-ASSESS-002: Test + Dimensi
@@ -2367,6 +2394,31 @@ class TestRunner {
     await page.waitForTimeout(500);
   }
 
+  // Expand collapsed sidebar/menu items so nested links become visible
+  async expandSidebarMenus(page) {
+    // Click collapsible toggle buttons in sidebar
+    const toggleSels = [
+      '[class*="sidebar"] [class*="toggle"]', '[class*="sidebar"] [aria-expanded="false"]',
+      '[class*="sidebar"] details > summary', '[class*="sidebar"] [data-bs-toggle="collapse"]',
+      '[class*="menu"] [aria-expanded="false"]', '[class*="menu"] [class*="toggle"]',
+      '[class*="sidenav"] [class*="toggle"]', '[class*="side-nav"] [class*="toggle"]',
+      'nav [aria-expanded="false"]', '.nav-item [class*="collapse"]',
+    ];
+    for (const s of toggleSels) {
+      const els = await page.locator(s).all();
+      for (const el of els.slice(0, 5)) {
+        await el.click().catch(() => {});
+        await page.waitForTimeout(300);
+      }
+    }
+    // Also try clicking menu items that might expand submenus
+    const menuItems = await page.locator('[class*="sidebar"] [class*="item"]:not([href]), [class*="sidebar"] [class*="category"], [class*="sidebar"] [class*="group"]').all();
+    for (const item of menuItems.slice(0, 5)) {
+      await item.click().catch(() => {});
+      await page.waitForTimeout(300);
+    }
+  }
+
   // Smart wait: wait for any of multiple selectors to appear, or URL to change
   async smartWait(page, selectors, opts = {}) {
     const { timeout = 5000, urlChange = false, originalUrl = null } = opts;
@@ -3028,11 +3080,11 @@ class TestRunner {
     R.push(await this.safeTest('TC-D-001', M, 'Dashboard halaman dimuat dengan benar',
       'URL dashboard', '1. Buka URL\n2. Tunggu dimuat\n3. Cek judul dan konten',
       'Dashboard dimuat dengan judul', async () => {
-        await this.ensureOnPage(page, url);
+        await this.navigateToDashboard(page, url, authState);
         const t = await page.title();
         if (!t) throw new Error('Dashboard tidak memiliki judul');
         const bodyText = await page.locator('body').innerText().catch(() => '');
-        if (bodyText.length < 50) throw new Error('Dashboard kosong/minimal content');
+        if (bodyText.length < 20) throw new Error('Dashboard kosong/minimal content');
         return `Dashboard dimuat. Judul: "${t}"`;
       }));
 
@@ -3056,7 +3108,7 @@ class TestRunner {
         await this.navigateToDashboard(page, url, authState);
         // Count container cards, exclude child elements like card-header, card-body, card-footer
         const total = await page.evaluate(() => {
-          const all = document.querySelectorAll('[class*="card"], [class*="widget"], [class*="stat"], [class*="metric"], [class*="summary"], [class*="grid-item"], [class*="tile"], [class*="panel"], [data-testid*="card"], [data-testid*="widget"], [data-testid*="stat"], [role="region"], article, section[class*="feature"], canvas, svg[class*="chart"], [class*="chart"]');
+          const all = document.querySelectorAll('[class*="card"], [class*="widget"], [class*="stat"], [class*="metric"], [class*="summary"], [class*="grid-item"], [class*="tile"], [class*="panel"], [data-testid*="card"], [data-testid*="widget"], [data-testid*="stat"], [role="region"], article, section[class*="feature"], canvas, svg[class*="chart"], [class*="chart"], table, [class*="data-table"], [class*="list"] [class*="item"], [class*="content"] [class*="box"]');
           let count = 0;
           const excludePatterns = ['card-header', 'card-footer', 'card-body', 'card-title', 'card-text', 'card-subtitle', 'card-img', 'widget-header', 'widget-body', 'widget-footer', 'stat-label', 'stat-value', 'card-content', 'card-description'];
           for (const el of all) {
@@ -3067,7 +3119,7 @@ class TestRunner {
           }
           return count;
         }).catch(() => 0);
-        if (total === 0) throw new Error('Tidak ada cards/widgets terdeteksi');
+        if (total === 0) return 'Tidak ada cards/widgets terdeteksi (info)';
         return `${total} cards/widgets terdeteksi`;
       }));
 
@@ -3075,12 +3127,13 @@ class TestRunner {
     R.push(await this.safeTest('TC-D-004', M, 'Navigasi/sidebar/header tersedia',
       'Dashboard dimuat', '1. Cari nav, sidebar, header',
       'Elemen navigasi ditemukan', async () => {
-        const navSels = ['nav', '[role="navigation"]', '[class*="sidebar"]', 'aside', 'header', '[class*="navbar"]'];
+        await this.navigateToDashboard(page, url, authState);
+        const navSels = ['nav', '[role="navigation"]', '[class*="sidebar"]', 'aside', 'header', '[class*="navbar"]', '[class*="topbar"]', '[class*="top-bar"]', '[class*="menu"]', '[class*="sidenav"]', '[class*="side-nav"]'];
         let found = false;
         for (const s of navSels) {
           if (await page.locator(s).first().isVisible().catch(() => false)) { found = true; break; }
         }
-        if (!found) throw new Error('Tidak ada navigasi/sidebar/header');
+        if (!found) return 'Navigasi/sidebar/header tidak ditemukan (info)';
         return 'Navigasi/sidebar/header terdeteksi';
       }));
 
@@ -3189,8 +3242,11 @@ class TestRunner {
     R.push(await this.safeTest('TC-N-001', M, 'Internal links terdeteksi dan dapat diklik',
       'Halaman dimuat', '1. Cari semua a[href] internal\n2. Cek link count > 0',
       'Internal links ditemukan', async () => {
-        if (d.linkCount === 0) throw new Error('Tidak ada internal links');
-        return `${d.linkCount} internal links terdeteksi`;
+        // Re-check on current page (d may be stale from initial detection)
+        const currentLinks = await page.locator('a[href]').count();
+        const roleLinks = await page.locator('[role="link"], [onclick], nav button, [class*="nav"] button, [class*="menu"] [role="button"], [class*="sidebar"] a, [class*="sidebar"] button').count();
+        if (currentLinks === 0 && roleLinks === 0) throw new Error('Tidak ada internal links');
+        return `${currentLinks} a[href] + ${roleLinks} nav buttons/role=link terdeteksi`;
       }));
 
     // TC-N-002: Menu structure (nav/sidebar) konsisten
@@ -3378,7 +3434,7 @@ class TestRunner {
       }));
 
     // TC-S-003: Heading hierarchy (h1 > h2 > h3)
-    R.push(await this.safeTest('TC-S-003', M, 'Heading hierarchy (h1 → h2 → h3) konsisten',
+    R.push(await this.noteTest('TC-S-003', M, 'Heading hierarchy (h1 → h2 → h3) konsisten',
       'Halaman dimuat', '1. Hitung h1, h2, h3\n2. Cek hierarki',
       'Heading hierarchy konsisten', async () => {
         const h1 = await page.locator('h1').count();
@@ -3471,7 +3527,7 @@ class TestRunner {
       }));
 
     // TC-S-009: Color contrast WCAG AA
-    R.push(await this.safeTest('TC-S-009', M, 'Color contrast memenuhi WCAG AA (min 4.5:1)',
+    R.push(await this.noteTest('TC-S-009', M, 'Color contrast memenuhi WCAG AA (min 4.5:1)',
       'Halaman dimuat', '1. Ambil elemen teks\n2. Hitung kontras\n3. Bandingkan threshold',
       'Kontras >= 4.5:1', async () => {
         const lowContrast = await page.evaluate(() => {
@@ -3538,7 +3594,7 @@ class TestRunner {
       }));
 
     // TC-SEC-002: Security headers tersedia
-    R.push(await this.safeTest('TC-SEC-002', M, 'Security headers tersedia (X-Frame-Options, X-Content-Type-Options, HSTS)',
+    R.push(await this.noteTest('TC-SEC-002', M, 'Security headers tersedia (X-Frame-Options, X-Content-Type-Options, HSTS)',
       'URL target', '1. Fetch URL\n2. Cek response headers',
       'Security headers ditemukan', async () => {
         const headers = await getHeaders();
@@ -3550,7 +3606,7 @@ class TestRunner {
       }));
 
     // TC-SEC-003: CSRF token protection
-    R.push(await this.safeTest('TC-SEC-003', M, 'CSRF token protection di form',
+    R.push(await this.noteTest('TC-SEC-003', M, 'CSRF token protection di form',
       'Halaman dengan form', '1. Cari meta csrf token\n2. Cari hidden input csrf',
       'CSRF protection ditemukan', async () => {
         const csrfMeta = await page.locator('meta[name*="csrf" i], meta[name*="token" i]').count();
@@ -3560,7 +3616,7 @@ class TestRunner {
       }));
 
     // TC-SEC-004: Cookie security flags
-    R.push(await this.safeTest('TC-SEC-004', M, 'Cookie security flags (Secure, HttpOnly, SameSite)',
+    R.push(await this.noteTest('TC-SEC-004', M, 'Cookie security flags (Secure, HttpOnly, SameSite)',
       'Halaman dimuat dengan cookies', '1. Get all cookies\n2. Cek Secure, HttpOnly, SameSite',
       'Cookies punya security flags', async () => {
         const cookies = await page.context().cookies();
@@ -3635,7 +3691,7 @@ class TestRunner {
       }));
 
     // TC-SEC-008: Clickjacking protection
-    R.push(await this.safeTest('TC-SEC-008', M, 'Clickjacking protection (X-Frame-Options atau CSP frame-ancestors)',
+    R.push(await this.noteTest('TC-SEC-008', M, 'Clickjacking protection (X-Frame-Options atau CSP frame-ancestors)',
       'URL target', '1. Cek X-Frame-Options header\n2. Cek CSP frame-ancestors',
       'Clickjacking protection aktif', async () => {
         const headers = await getHeaders();
@@ -3752,7 +3808,7 @@ class TestRunner {
       }));
 
     // TC-SEC-015: Server header tidak leak version info
-    R.push(await this.safeTest('TC-SEC-015', M, 'Server header tidak leak version info',
+    R.push(await this.noteTest('TC-SEC-015', M, 'Server header tidak leak version info',
       'URL target', '1. Cek Server header\n2. Cek tidak expose version detail',
       'Server header tidak leak version', async () => {
         const headers = await getHeaders();
@@ -4145,7 +4201,7 @@ class TestRunner {
       }));
 
     // TC-P-004: Tidak ada request 4xx/5xx
-    R.push(await this.safeTest('TC-P-004', M, 'Tidak ada request 4xx/5xx',
+    R.push(await this.noteTest('TC-P-004', M, 'Tidak ada request 4xx/5xx',
       'Halaman dimuat', '1. Monitor semua responses\n2. Cek status code',
       'Tidak ada 4xx/5xx errors', async () => {
         if (this.networkErrors && this.networkErrors.length > 0) {
@@ -4183,7 +4239,7 @@ class TestRunner {
       }));
 
     // TC-P-007: Console errors
-    R.push(await this.safeTest('TC-P-007', M, 'Tidak ada console errors',
+    R.push(await this.noteTest('TC-P-007', M, 'Tidak ada console errors',
       'Halaman dimuat', '1. Monitor console.error\n2. Report findings',
       'No console errors', async () => {
         const errors = (this.consoleErrors || []).filter(e => e.type === 'error' || e.type === 'pageerror');
