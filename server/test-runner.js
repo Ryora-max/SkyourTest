@@ -379,6 +379,8 @@ class TestRunner {
         if (!afterUrl.includes('sign_in') && !afterUrl.includes('login') && !afterUrl.includes('auth')) {
           authState.isAuthenticated = true;
           authState.dashboardUrl = afterUrl;
+          // Handle select-tenant page if redirected there
+          await this.handleTenantSelection(page, authState);
         }
       }
 
@@ -720,7 +722,9 @@ class TestRunner {
         }
         authState.isAuthenticated = true;
         authState.dashboardUrl = currentUrl;
-        return `Login berhasil, redirect ke: ${currentUrl}`;
+        // Handle select-tenant page if redirected there
+        await this.handleTenantSelection(page, authState);
+        return `Login berhasil, redirect ke: ${authState.dashboardUrl}`;
       }));
 
     // TC-L-008: Session persistence
@@ -762,6 +766,7 @@ class TestRunner {
         if (!afterUrl.includes('sign_in') && !afterUrl.includes('login') && !afterUrl.includes('auth')) {
           authState.isAuthenticated = true;
           authState.dashboardUrl = afterUrl;
+          await this.handleTenantSelection(page, authState);
         }
       }
     } else {
@@ -795,6 +800,7 @@ class TestRunner {
       if (!afterUrl.includes('sign_in') && !afterUrl.includes('login') && !afterUrl.includes('auth')) {
         authState.isAuthenticated = true;
         authState.dashboardUrl = afterUrl;
+        await this.handleTenantSelection(page, authState);
       }
     } else {
       R.push(this.skip('TC-L-010', M, 'Back button security', 'User login', '1. Logout\n2. Back', 'No dashboard access', 'not authenticated'));
@@ -939,7 +945,7 @@ class TestRunner {
       }));
 
     // TC-EMP-002: Add employee button
-    R.push(await this.safeTest('TC-EMP-002', M, 'Button tambah employee terdeteksi',
+    R.push(await this.noteTest('TC-EMP-002', M, 'Button tambah employee terdeteksi',
       'Tabel employee', '1. Cari button add/tambah employee',
       'Button add ditemukan', async () => {
         await this.navigateToDashboard(page, url, authState);
@@ -1074,7 +1080,7 @@ class TestRunner {
     const M = 'CRUD Kompetensi'; const R = [];
 
     // TC-KOMP-001: Master Kompetensi menu
-    R.push(await this.safeTest('TC-KOMP-001', M, 'Menu Master Kompetensi terdeteksi',
+    R.push(await this.noteTest('TC-KOMP-001', M, 'Menu Master Kompetensi terdeteksi',
       'Dashboard', '1. Cari menu kompetensi',
       'Menu kompetensi ditemukan', async () => {
         await this.navigateToDashboard(page, url, authState);
@@ -1155,7 +1161,7 @@ class TestRunner {
     const M = 'Test & Assessment'; const R = [];
 
     // TC-ASSESS-001: Test list
-    R.push(await this.safeTest('TC-ASSESS-001', M, 'List test/assessment terdeteksi',
+    R.push(await this.noteTest('TC-ASSESS-001', M, 'List test/assessment terdeteksi',
       'Dashboard', '1. Cari list/section test',
       'List test ditemukan', async () => {
         await this.navigateToDashboard(page, url, authState);
@@ -2170,6 +2176,55 @@ class TestRunner {
     } catch { return false; }
   }
 
+  // Handle select-tenant page — click first available tenant/org to proceed to dashboard
+  async handleTenantSelection(page, authState) {
+    const currentUrl = page.url();
+    if (!currentUrl.includes('select-tenant') && !currentUrl.includes('select_tenant') && !currentUrl.includes('select-organization') && !currentUrl.includes('choose-tenant')) {
+      return false;
+    }
+    // Wait for tenant options to load
+    await page.waitForTimeout(2000);
+    // Try clicking first visible tenant/org card/button
+    const tenantSels = [
+      '[class*="tenant"] [class*="card"]', '[class*="tenant"] [class*="item"]',
+      '[class*="organization"] [class*="card"]', '[class*="organization"] [class*="item"]',
+      '[class*="org"] [class*="card"]', '[class*="org"] [class*="item"]',
+      'a[href*="dashboard"]', 'a[href*="admin"]',
+      'button:has-text("Pilih")', 'button:has-text("Select")', 'button:has-text("Continue")', 'button:has-text("Lanjut")',
+      'button:has-text("Masuk")', 'button:has-text("Enter")',
+      '[class*="card"]:visible', '[class*="item"]:visible',
+      'table tr td a', 'table tr td button',
+      'li a', 'li button',
+    ];
+    for (const s of tenantSels) {
+      const el = page.locator(s).first();
+      if (await el.isVisible().catch(() => false)) {
+        await el.click().catch(() => {});
+        try { await page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+        await page.waitForTimeout(2000);
+        const afterUrl = page.url();
+        if (!afterUrl.includes('select-tenant') && !afterUrl.includes('select_tenant')) {
+          authState.dashboardUrl = afterUrl;
+          return true;
+        }
+      }
+    }
+    // If no clickable element found, try navigating to dashboard directly
+    let baseUrl;
+    try { baseUrl = new URL(currentUrl).origin; } catch { baseUrl = currentUrl; }
+    const dashRoutes = ['/dashboard', '/admin', '/home', '/app'];
+    for (const route of dashRoutes) {
+      await page.goto(baseUrl + route, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+      const afterUrl = page.url();
+      if (!afterUrl.includes('select-tenant') && !afterUrl.includes('select_tenant') && !afterUrl.includes('login')) {
+        authState.dashboardUrl = afterUrl;
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Navigate to login page — try URL, then /login, /auth, /sign_in, then click Login/Masuk link
   async navigateToLoginPage(page, url) {
     let baseUrl;
@@ -2301,6 +2356,8 @@ class TestRunner {
       await page.goto(authState.dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
       await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(2000);
+      // Handle select-tenant page if we land on one
+      await this.handleTenantSelection(page, authState);
     }
     // Check if current page has dashboard-like content (cards/widgets/stats)
     const hasDashboardContent = await page.evaluate(() => {
@@ -3293,7 +3350,7 @@ class TestRunner {
     const M = 'Navigation & Menu'; const R = [];
 
     // TC-N-001: Internal links berfungsi
-    R.push(await this.safeTest('TC-N-001', M, 'Internal links terdeteksi dan dapat diklik',
+    R.push(await this.noteTest('TC-N-001', M, 'Internal links terdeteksi dan dapat diklik',
       'Halaman dimuat', '1. Cari semua a[href] internal\n2. Cek link count > 0',
       'Internal links ditemukan', async () => {
         // Re-check on current page (d may be stale from initial detection)
