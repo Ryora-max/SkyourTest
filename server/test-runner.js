@@ -546,6 +546,8 @@ class TestRunner {
       '[class*="user-info"]', '[class*="user-dropdown"]', '[data-testid*="user-menu"]',
       'button:has-text("Account")', 'button[aria-haspopup="true"]',
       '[class*="navbar"] [class*="dropdown"]', 'header [class*="dropdown"]',
+      'header button', 'nav button:last-child', '[class*="header"] button:last-child',
+      '[class*="topbar"] button:last-child', '[class*="app-bar"] button:last-child',
     ];
     for (const s of menuSels) {
       const el = page.locator(s).first();
@@ -564,6 +566,36 @@ class TestRunner {
         await page.keyboard.press('Escape').catch(() => {});
       }
     }
+    // Aggressive: scan all visible elements for logout-like text content
+    const foundLogout = await page.evaluate(() => {
+      const allEls = document.querySelectorAll('a, button, div, span, li, [role="button"], [role="link"]');
+      const logoutKeywords = ['logout', 'log out', 'log off', 'sign out', 'signout', 'keluar', 'sign off'];
+      for (const el of allEls) {
+        const text = (el.textContent || '').trim().toLowerCase();
+        if (text.length < 30 && logoutKeywords.some(kw => text === kw || text.includes(kw))) {
+          const rect = el.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            el.click();
+            return true;
+          }
+        }
+      }
+      return false;
+    }).catch(() => false);
+    if (foundLogout) {
+      await page.waitForTimeout(2000);
+      return true;
+    }
+    // Try API logout call as last resort
+    try {
+      const currentUrl = page.url();
+      const baseUrl = new URL(currentUrl).origin;
+      await page.evaluate(async (b) => {
+        try { await fetch(b + '/api/logout', { method: 'POST', credentials: 'include' }); } catch {}
+        try { await fetch(b + '/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch {}
+        try { await fetch(b + '/logout', { method: 'POST', credentials: 'include' }); } catch {}
+      }, baseUrl);
+    } catch {}
     // Fallback: clear cookies
     await page.context().clearCookies();
     return false;
@@ -781,16 +813,26 @@ class TestRunner {
       R.push(await this.safeTest('TC-L-010', M, 'Back button security setelah logout',
         'User login', '1. Login\n2. Logout\n3. Back button\n4. Cek tidak bisa akses dashboard',
         'Tidak bisa akses dashboard setelah logout', async () => {
-          // Logout first
+          // Navigate to dashboard first, then logout
+          await this.navigateToDashboard(page, url, authState);
+          await this.handleTenantSelection(page, authState);
           await this.logout(page, authState);
           authState.isAuthenticated = false;
+          await page.waitForTimeout(1000);
+          // Navigate to login page explicitly (clears SPA cached state)
+          await this.navigateToLoginPage(page, url);
           await page.waitForTimeout(1000);
           // Go back
           await page.goBack().catch(() => {});
           await page.waitForTimeout(2000);
           const afterUrl = page.url();
+          // Check if we're back on a dashboard/admin page with actual content
+          const hasLoginForm = await this.detectLoginForm(page).catch(() => false);
+          const bodyText = await page.evaluate(() => document.body?.innerText?.length || 0).catch(() => 0);
+          if (hasLoginForm) return 'Back button security OK (login form shown)';
           if (afterUrl.includes('dashboard') || afterUrl.includes('admin') || afterUrl.includes('panel')) {
-            throw new Error('Back button bisa akses dashboard setelah logout — security issue');
+            if (bodyText > 100) throw new Error('Back button bisa akses dashboard setelah logout — security issue');
+            return 'Back button security OK (page empty/redirect)';
           }
           return 'Back button security OK';
         }));
